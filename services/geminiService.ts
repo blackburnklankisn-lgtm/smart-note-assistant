@@ -108,16 +108,47 @@ export const generateSmartNote = async (
   }
 };
 
+/**
+ * Basic Markdown to HTML converter for editing purposes.
+ * Supported: Headers, Bold, Italic, Lists (Basic), Blockquotes, Horizontal Rule.
+ */
+export function markdownToHtml(markdown: string): string {
+  let html = markdown
+    // Headers
+    .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+    .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+    .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+    // Bold
+    .replace(/\*\*(.*)\*\*/gim, '<b>$1</b>')
+    .replace(/__(.*)__/gim, '<b>$1</b>')
+    // Italic
+    .replace(/\*(.*)\*/gim, '<i>$1</i>')
+    .replace(/_(.*)_/gim, '<i>$1</i>')
+    // Horizontal Rule
+    .replace(/^---$/gim, '<hr />')
+    // Lists (unordered) - Simple approach: just make them divs with bullets for editable content
+    // or wrapped in <ul> if we want structure. For contentEditable, simple styling often works best.
+    .replace(/^\s*-\s+(.*)$/gim, '<ul><li>$1</li></ul>')
+    .replace(/^\s*\*\s+(.*)$/gim, '<ul><li>$1</li></ul>')
+    // Blockquotes
+    .replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>')
+    // New lines to paragraphs or BRs
+    .replace(/\n/gim, '<br />');
+
+  // Fix multiple ULs sequence (optional cleanup, but browser handles adjacent ULs okay visually)
+  html = html.replace(/<\/ul>\s*<ul>/gim, ''); 
+
+  return html;
+}
+
 // Helper to split HTML string into Text and Image parts
 async function parseHtmlToContentParts(html: string): Promise<any[]> {
-  // Create a temporary DOM element to parse the HTML
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
   const body = doc.body;
 
   const parts: any[] = [];
   
-  // Use TreeWalker to flatten the DOM
   const walker = document.createTreeWalker(
     body,
     NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
@@ -130,24 +161,20 @@ async function parseHtmlToContentParts(html: string): Promise<any[]> {
   while (node) {
     if (node.nodeType === Node.TEXT_NODE) {
       const text = node.textContent || "";
-      // Only add text if it's not just whitespace, or if it's meaningful structure
       if (text) {
         currentText += text;
       }
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as HTMLElement;
       
-      // Handle Images
       if (el.tagName === 'IMG') {
         const src = (el as HTMLImageElement).getAttribute('src');
         if (src && src.startsWith('data:image')) {
-          // Flush pending text
           if (currentText.trim()) {
             parts.push({ text: currentText });
             currentText = "";
           }
           
-          // Add image part
           const mimeType = src.substring(5, src.indexOf(';'));
           const data = src.split(',')[1];
           parts.push({
@@ -159,14 +186,13 @@ async function parseHtmlToContentParts(html: string): Promise<any[]> {
         }
       } 
       // Handle Block Elements for formatting context (newlines)
-      else if (['DIV', 'P', 'BR', 'LI', 'H1', 'H2', 'H3'].includes(el.tagName)) {
+      else if (['DIV', 'P', 'BR', 'LI', 'H1', 'H2', 'H3', 'UL', 'OL', 'BLOCKQUOTE'].includes(el.tagName)) {
         currentText += "\n";
       }
     }
     node = walker.nextNode();
   }
 
-  // Flush remaining text
   if (currentText.trim()) {
     parts.push({ text: currentText });
   }
