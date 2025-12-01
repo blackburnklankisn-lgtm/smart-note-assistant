@@ -1,0 +1,5 @@
+{
+  "name": "Smart Note Assistant",
+  "description": "An intelligent knowledge management tool that transforms fragmented text and images into structured, professional notes using Gemini 2.5.",
+  "requestFramePermissions": []
+}
