@@ -2,161 +2,228 @@
 
 这是一个基于 Google Gemini 2.5 模型的智能知识管理工具。它能够将碎片化的文本、图片和 PDF 文档转化为结构清晰、逻辑严密的专业笔记。
 
-## ✨ 核心功能
+---
 
-*   **多模态解析**：支持识别图片中的文字/图表，以及阅读 PDF 文档内容。
-*   **智能重组**：自动纠正语病，将附件信息与文本逻辑深度融合。
-*   **结构化输出**：自动生成摘要、关键要点、知识扩展（AI Note）和行动建议。
-*   **富文本编辑**：支持 Markdown 渲染、字体调节、颜色高亮及拖拽调整布局。
-*   **本地存储**：笔记数据自动保存至浏览器本地存储 (LocalStorage)。
+## 🛠️ 本地部署安装指南 (保姆级教程)
+
+本教程将指导您如何在本地 Windows/Mac 电脑上，使用 **Vite + React + TypeScript** 搭建并运行本项目。
+
+### 第一步：环境准备
+
+1.  **安装 Node.js**:
+    *   访问 [Node.js 官网](https://nodejs.org/) 下载并安装 **LTS 版本** (推荐 v18 或更高)。
+    *   安装完成后，打开终端 (Terminal 或 CMD)，输入 `node -v` 检查是否安装成功。
+
+2.  **准备代码编辑器**:
+    *   推荐使用 [VS Code](https://code.visualstudio.com/)。
+
+3.  **获取 Google Gemini API Key**:
+    *   访问 [Google AI Studio](https://aistudiocdn.com/google-ai-studio) 获取免费的 API Key。
 
 ---
 
-## 🚀 本地部署安装指南
+### 第二步：创建项目基础框架
 
-要在本地电脑上运行此项目，推荐使用 **Vite** 进行构建。请按照以下步骤操作：
-
-### 1. 环境准备
-
-确保你的电脑已安装以下软件：
-*   **Node.js** (推荐 v18 或更高版本) - [下载地址](https://nodejs.org/)
-*   **npm** (通常随 Node.js 一起安装)
-
-### 2. 获取 Google Gemini API Key
-
-本项目依赖 Google Gemini API。
-1. 访问 [Google AI Studio](https://aistudiocdn.com/google-ai-studio).
-2. 点击 "Get API key"。
-3. 创建一个新的 API Key 并复制保存，后续步骤会用到。
-
-### 3. 初始化项目
-
-打开终端（Terminal 或 CMD），执行以下命令创建一个新的 Vite React TypeScript 项目：
+在电脑上选择一个文件夹，打开终端，依次执行以下命令：
 
 ```bash
-# 创建项目文件夹 (例如命名为 smart-note)
+# 1. 创建一个名为 smart-note 的新项目 (选择 React 和 TypeScript)
 npm create vite@latest smart-note -- --template react-ts
 
-# 进入项目目录
+# 2. 进入项目目录
 cd smart-note
 
-# 安装基础依赖
+# 3. 安装基础依赖
 npm install
 ```
 
-### 4. 安装项目依赖库
+---
 
-根据项目代码，安装所需的第三方库：
+### 第三步：安装项目所需插件
+
+复制以下命令在终端中运行，安装本项目需要的所有第三方库：
 
 ```bash
+# 安装核心功能库
 npm install lucide-react @google/genai react-markdown uuid
-npm install -D tailwindcss postcss autoprefixer
+
+# 安装 TypeScript 类型定义 (防止报错)
+npm install -D @types/uuid @types/node
+
+# 安装 TailwindCSS 样式库及排版插件
+npm install -D tailwindcss postcss autoprefixer @tailwindcss/typography
 ```
 
-### 5. 配置 Tailwind CSS
+---
 
-初始化 Tailwind 配置：
+### 第四步：配置样式 (Tailwind CSS)
 
-```bash
-npx tailwindcss init -p
-```
+1.  **初始化配置**：
+    在终端运行：
+    ```bash
+    npx tailwindcss init -p
+    ```
+    这会生成 `tailwind.config.js` 和 `postcss.config.js` 文件。
 
-修改 `tailwind.config.js` 文件，配置内容路径和字体：
+2.  **修改 `tailwind.config.js`**：
+    用编辑器打开该文件，**完全替换** 为以下内容：
 
-```javascript
-/** @type {import('tailwindcss').Config} */
-export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
-  theme: {
-    extend: {
-      fontFamily: {
-        sans: ['Inter', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+    ```javascript
+    /** @type {import('tailwindcss').Config} */
+    export default {
+      content: [
+        "./index.html",
+        "./src/**/*.{js,ts,jsx,tsx}",
+      ],
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+        },
       },
-      colors: {
-        primary: {
-          50: '#f0f9ff',
-          100: '#e0f2fe',
-          500: '#0ea5e9',
-          600: '#0284c7',
-          700: '#0369a1',
-        }
-      }
-    },
-  },
-  plugins: [
-    require('@tailwindcss/typography'), // 如果需要排版插件
-  ],
-}
-```
-*注意：需要在 `index.css` 中引入 Tailwind 指令：*
-```css
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-```
+      plugins: [
+        require('@tailwindcss/typography'),
+      ],
+    }
+    ```
 
-### 6. 迁移代码文件
+3.  **引入样式**：
+    打开 `src/index.css`，**清空原有内容**，填入以下代码：
 
-将提供的代码文件复制到 `src` 目录中相应的结构下：
+    ```css
+    @tailwind base;
+    @tailwind components;
+    @tailwind utilities;
 
-*   `App.tsx` -> `src/App.tsx`
-*   `types.ts` -> `src/types.ts`
-*   `services/` -> `src/services/`
-*   `components/` -> `src/components/`
+    /* 自定义滚动条样式 */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9; 
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1; 
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8; 
+    }
+    ```
 
-### 7. 配置环境变量 (API Key)
+---
 
-在项目根目录下创建一个名为 `.env` 的文件，并添加你的 API Key：
+### 第五步：迁移源代码 (最关键的一步)
 
-```env
-VITE_API_KEY=你的_GOOGLE_GEMINI_API_KEY_粘贴在这里
-```
+请按照以下结构将本项目提供的代码复制到 `src` 文件夹中。
 
-**⚠️ 重要代码调整：**
-由于 Vite 在浏览器端使用的是 `import.meta.env` 而不是 `process.env`，你需要修改 `src/services/geminiService.ts` 文件：
+1.  **清理默认文件**：
+    *   删除 `src/App.css` (如果存在)。
+    *   你可以保留 `src/main.tsx` (Vite 默认入口)，不要使用本项目提供的 `index.tsx`。
 
-**原代码：**
+2.  **创建文件结构**：
+    在 `src` 目录下新建 `components` 和 `services` 文件夹。
+
+3.  **复制文件内容**：
+
+    *   **src/types.ts**: 复制 `types.ts` 的所有代码。
+    *   **src/App.tsx**: 复制 `App.tsx` 的所有代码。
+    *   **src/components/InputSection.tsx**: 复制 `components/InputSection.tsx` 的所有代码。
+    *   **src/components/NoteDisplay.tsx**: 复制 `components/NoteDisplay.tsx` 的所有代码。
+    *   **src/services/storageService.ts**: 复制 `services/storageService.ts` 的所有代码。
+    *   **src/services/geminiService.ts**: 复制 `services/geminiService.ts` 的代码。**注意：需要修改此文件，详见下一步！**
+
+4.  **修改 `index.html`**：
+    打开项目根目录下的 `index.html`，在 `<head>` 标签内添加字体链接：
+    ```html
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    ```
+
+---
+
+### 第六步：修改代码以适配本地环境 (必读)
+
+本项目原始代码是为特定在线环境编写的，在本地 Vite 运行需要修改两个地方：
+
+**1. 修改 API Key 调用方式**
+打开 **`src/services/geminiService.ts`**，找到以下代码：
+
 ```typescript
+// ❌ 原始代码 (本地运行会报错 process is not defined)
 if (!process.env.API_KEY) { ... }
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 ```
 
-**修改为：**
+**✅ 修改为：**
+
 ```typescript
-const apiKey = import.meta.env.VITE_API_KEY; // Vite 标准方式
+// 使用 Vite 特有的环境变量方式
+const apiKey = import.meta.env.VITE_API_KEY;
+
 if (!apiKey) {
-    throw new Error("API Key is missing. Please check .env file.");
+  throw new Error("API Key is missing. Please check .env file.");
 }
+
 const ai = new GoogleGenAI({ apiKey: apiKey });
 ```
 
-### 8. 启动项目
+**2. 确保入口文件正确**
+确保你的 `src/main.tsx` (或 `src/index.tsx`) 正常引入了 `App`。通常 Vite 默认生成的 `main.tsx` 如下，无需大改：
 
-一切准备就绪后，启动本地开发服务器：
+```tsx
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.tsx' // 注意这里可能需要加 .tsx 后缀
+import './index.css'
 
-```bash
-npm run dev
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
 ```
-
-终端会显示一个本地访问地址（通常是 `http://localhost:5173`），在浏览器中打开该地址即可使用智能笔记助手。
 
 ---
 
-## 🛠️ 常见问题排查
+### 第七步：配置 API Key
 
-**Q: 提示 "API Key is missing"？**
-A: 请确保你创建了 `.env` 文件，并且变量名是以 `VITE_` 开头（例如 `VITE_API_KEY`），并按照第 7 步修改了代码中的调用方式。修改 `.env` 后需要重启终端。
+1.  在项目根目录（与 `package.json` 同级）创建一个名为 `.env` 的文件。
+2.  在文件中输入你的 API Key：
 
-**Q: 样式显示不正常？**
-A: 请检查 `tailwind.config.js` 中的 `content` 路径是否包含了你的 `.tsx` 文件路径，以及是否在 `src/index.css` 中引入了 Tailwind 指令。
+```env
+VITE_API_KEY=AIzaSy...这里粘贴你的真实Key...
+```
 
-**Q: 无法识别 PDF 或图片？**
-A: 请确保网络连接正常，因为解析多模态内容需要上传数据到 Google Gemini API 服务器。
+*注意：变量名必须以 `VITE_` 开头，否则 Vite 无法读取。*
 
-## 📜 版权信息
+---
 
-本项目仅供学习和个人使用。使用 Google Gemini API 请遵循相关的服务条款和使用限制。
+### 第八步：启动运行
+
+1.  在终端输入：
+    ```bash
+    npm run dev
+    ```
+2.  终端会显示类似 `Local: http://localhost:5173/` 的地址。
+3.  按住 `Ctrl` 点击链接，或在浏览器手动输入该地址。
+
+**恭喜！如果一切顺利，你现在应该可以在本地使用智能笔记助手了。**
+
+---
+
+### 常见报错排查
+
+*   **报错：`process is not defined`**
+    *   原因：未完成第六步的第1点修改。浏览器环境没有 `process` 对象。
+    *   解决：去 `src/services/geminiService.ts` 把 `process.env.API_KEY` 改为 `import.meta.env.VITE_API_KEY`。
+
+*   **报错：`API Key is missing`**
+    *   原因：`.env` 文件没创建，或者变量名没加 `VITE_` 前缀。
+    *   解决：检查 `.env` 文件，确保写的是 `VITE_API_KEY=...`，修改后**重启终端**再次运行 `npm run dev`。
+
+*   **样式乱码/不显示**
+    *   原因：Tailwind 配置不正确。
+    *   解决：检查 `tailwind.config.js` 的 `content` 是否包含 `src` 目录；检查 `src/index.css` 是否引入了 `@tailwind` 指令。
