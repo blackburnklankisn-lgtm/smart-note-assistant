@@ -65,31 +65,41 @@ npm install -D tailwindcss postcss autoprefixer @tailwindcss/typography
     ```
     这会生成 `tailwind.config.js` 和 `postcss.config.js` 文件。
 
-2.  **修改 `tailwind.config.js`**：
-    用编辑器打开该文件，**完全替换** 为以下内容：
+    > **⚠️ 注意**：如果运行此命令后没有生成文件，或者报错，请**直接手动创建**这两个文件，内容如下：
 
-    ```javascript
-    /** @type {import('tailwindcss').Config} */
-    export default {
-      content: [
-        "./index.html",
-        "./src/**/*.{js,ts,jsx,tsx}",
-      ],
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Inter', 'sans-serif'],
-            mono: ['JetBrains Mono', 'monospace'],
+    *   **手动创建 `tailwind.config.js`**:
+        ```javascript
+        /** @type {import('tailwindcss').Config} */
+        export default {
+          content: [
+            "./index.html",
+            "./src/**/*.{js,ts,jsx,tsx}",
+          ],
+          theme: {
+            extend: {
+              fontFamily: {
+                sans: ['Inter', 'sans-serif'],
+                mono: ['JetBrains Mono', 'monospace'],
+              },
+            },
           },
-        },
-      },
-      plugins: [
-        require('@tailwindcss/typography'),
-      ],
-    }
-    ```
+          plugins: [
+            require('@tailwindcss/typography'),
+          ],
+        }
+        ```
 
-3.  **引入样式**：
+    *   **手动创建 `postcss.config.js`**:
+        ```javascript
+        export default {
+          plugins: {
+            tailwindcss: {},
+            autoprefixer: {},
+          },
+        }
+        ```
+
+2.  **引入样式**：
     打开 `src/index.css`，**清空原有内容**，填入以下代码：
 
     ```css
@@ -134,96 +144,4 @@ npm install -D tailwindcss postcss autoprefixer @tailwindcss/typography
     *   **src/components/InputSection.tsx**: 复制 `components/InputSection.tsx` 的所有代码。
     *   **src/components/NoteDisplay.tsx**: 复制 `components/NoteDisplay.tsx` 的所有代码。
     *   **src/services/storageService.ts**: 复制 `services/storageService.ts` 的所有代码。
-    *   **src/services/geminiService.ts**: 复制 `services/geminiService.ts` 的代码。**注意：需要修改此文件，详见下一步！**
-
-4.  **修改 `index.html`**：
-    打开项目根目录下的 `index.html`，在 `<head>` 标签内添加字体链接：
-    ```html
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    ```
-
----
-
-### 第六步：修改代码以适配本地环境 (必读)
-
-本项目原始代码是为特定在线环境编写的，在本地 Vite 运行需要修改两个地方：
-
-**1. 修改 API Key 调用方式**
-打开 **`src/services/geminiService.ts`**，找到以下代码：
-
-```typescript
-// ❌ 原始代码 (本地运行会报错 process is not defined)
-if (!process.env.API_KEY) { ... }
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-```
-
-**✅ 修改为：**
-
-```typescript
-// 使用 Vite 特有的环境变量方式
-const apiKey = import.meta.env.VITE_API_KEY;
-
-if (!apiKey) {
-  throw new Error("API Key is missing. Please check .env file.");
-}
-
-const ai = new GoogleGenAI({ apiKey: apiKey });
-```
-
-**2. 确保入口文件正确**
-确保你的 `src/main.tsx` (或 `src/index.tsx`) 正常引入了 `App`。通常 Vite 默认生成的 `main.tsx` 如下，无需大改：
-
-```tsx
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import App from './App.tsx' // 注意这里可能需要加 .tsx 后缀
-import './index.css'
-
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-)
-```
-
----
-
-### 第七步：配置 API Key
-
-1.  在项目根目录（与 `package.json` 同级）创建一个名为 `.env` 的文件。
-2.  在文件中输入你的 API Key：
-
-```env
-VITE_API_KEY=AIzaSy...这里粘贴你的真实Key...
-```
-
-*注意：变量名必须以 `VITE_` 开头，否则 Vite 无法读取。*
-
----
-
-### 第八步：启动运行
-
-1.  在终端输入：
-    ```bash
-    npm run dev
-    ```
-2.  终端会显示类似 `Local: http://localhost:5173/` 的地址。
-3.  按住 `Ctrl` 点击链接，或在浏览器手动输入该地址。
-
-**恭喜！如果一切顺利，你现在应该可以在本地使用智能笔记助手了。**
-
----
-
-### 常见报错排查
-
-*   **报错：`process is not defined`**
-    *   原因：未完成第六步的第1点修改。浏览器环境没有 `process` 对象。
-    *   解决：去 `src/services/geminiService.ts` 把 `process.env.API_KEY` 改为 `import.meta.env.VITE_API_KEY`。
-
-*   **报错：`API Key is missing`**
-    *   原因：`.env` 文件没创建，或者变量名没加 `VITE_` 前缀。
-    *   解决：检查 `.env` 文件，确保写的是 `VITE_API_KEY=...`，修改后**重启终端**再次运行 `npm run dev`。
-
-*   **样式乱码/不显示**
-    *   原因：Tailwind 配置不正确。
-    *   解决：检查 `tailwind.config.js` 的 `content` 是否包含 `src` 目录；检查 `src/index.css` 是否引入了 `@tailwind` 指令。
+    *   **src/services/geminiService.ts**:
