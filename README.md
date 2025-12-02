@@ -39,19 +39,21 @@ npm install
 
 ---
 
-### 第三步：安装项目所需插件
+### 第三步：安装项目所需插件 (关键步骤)
 
-复制以下命令在终端中运行，安装本项目需要的所有第三方库：
+**注意**：为了防止版本不兼容报错，请务必使用下方的命令安装 **Tailwind CSS v3** 版本。
+
+复制以下命令在终端中运行：
 
 ```bash
 # 安装核心功能库
 npm install lucide-react @google/genai react-markdown uuid
 
-# 安装 TypeScript 类型定义 (防止报错)
+# 安装 TypeScript 类型定义
 npm install -D @types/uuid @types/node
 
-# 安装 TailwindCSS 样式库及排版插件
-npm install -D tailwindcss postcss autoprefixer @tailwindcss/typography
+# ⚠️ 安装样式库 (请严格复制此行，强制指定 tailwindcss@3)
+npm install -D tailwindcss@3 postcss autoprefixer @tailwindcss/typography
 ```
 
 ---
@@ -196,6 +198,15 @@ Vite 项目默认不支持直接使用 `process.env`，我们需要做一个简�
 ---
 
 ### 常见问题排查
+
+*   **报错 `[plugin:vite:css] [postcss] ... install @tailwindcss/postcss`**：
+    *   **原因**：这是因为你不小心安装了 Tailwind CSS v4 版本，而配置是针对 v3 版本的。
+    *   **解决**：在终端运行以下命令，强制重新安装 v3 版本：
+        ```bash
+        npm uninstall tailwindcss
+        npm install -D tailwindcss@3 postcss autoprefixer
+        ```
+        然后重新运行 `npm run dev` 即可。
 
 *   **报错 `process is not defined`**: 请仔细检查**第六步**中 `vite.config.ts` 的配置是否完全一致。
 *   **无法生成笔记**: 请检查 `.env` 文件中的 API Key 是否有效，以及是否开启了网络代理（国内用户通常需要代理才能访问 Google API）。
