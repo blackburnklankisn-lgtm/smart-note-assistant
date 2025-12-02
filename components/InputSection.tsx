@@ -2,7 +2,8 @@ import React, { useRef, useState, useEffect } from 'react';
 import { 
   X, Image as ImageIcon, Loader2, Sparkles, 
   Paperclip, File as FileIcon, Bold, Italic, Underline, 
-  Heading1, Heading2, AlignLeft
+  Heading1, Heading2, Save, Palette, Highlighter, ChevronDown,
+  Type, ALargeSmall
 } from 'lucide-react';
 import { ImagePreview, AppStatus } from '../types';
 
@@ -16,7 +17,62 @@ interface InputSectionProps {
   onAddFiles: (files: File[]) => void;
   onRemoveFile: (index: number) => void;
   onGenerate: () => void;
+  onSave: () => void;
 }
+
+// Predefined colors for Text and Highlights
+const TEXT_COLORS = [
+  { label: 'Default', value: 'inherit', class: 'bg-slate-900 border-slate-200' },
+  { label: 'Red', value: '#ef4444', class: 'bg-red-500 border-red-200' },
+  { label: 'Orange', value: '#f97316', class: 'bg-orange-500 border-orange-200' },
+  { label: 'Yellow', value: '#eab308', class: 'bg-yellow-500 border-yellow-200' },
+  { label: 'Green', value: '#22c55e', class: 'bg-green-500 border-green-200' },
+  { label: 'Blue', value: '#3b82f6', class: 'bg-blue-500 border-blue-200' },
+  { label: 'Indigo', value: '#6366f1', class: 'bg-indigo-500 border-indigo-200' },
+  { label: 'Purple', value: '#a855f7', class: 'bg-purple-500 border-purple-200' },
+];
+
+const HIGHLIGHT_COLORS = [
+  { label: 'None', value: 'transparent', class: 'bg-white border-slate-200' },
+  { label: 'Red', value: '#fee2e2', class: 'bg-red-100 border-red-200' },
+  { label: 'Orange', value: '#ffedd5', class: 'bg-orange-100 border-orange-200' },
+  { label: 'Yellow', value: '#fef9c3', class: 'bg-yellow-100 border-yellow-200' },
+  { label: 'Green', value: '#dcfce7', class: 'bg-green-100 border-green-200' },
+  { label: 'Blue', value: '#dbeafe', class: 'bg-blue-100 border-blue-200' },
+  { label: 'Indigo', value: '#e0e7ff', class: 'bg-indigo-100 border-indigo-200' },
+  { label: 'Purple', value: '#f3e8ff', class: 'bg-purple-100 border-purple-200' },
+];
+
+const FONT_FAMILIES = [
+  { label: 'Sans Serif', value: 'Inter, ui-sans-serif, system-ui, sans-serif' },
+  { label: 'Serif', value: 'Georgia, Cambria, "Times New Roman", Times, serif' },
+  { label: 'Monospace', value: '"JetBrains Mono", Menlo, Monaco, Consolas, monospace' },
+  { label: '宋体 (Songti)', value: 'SimSun, "Songti SC", STSong, serif' },
+  { label: '仿宋 (FangSong)', value: 'FangSong, "STFangsong", serif' },
+  { label: '楷体 (KaiTi)', value: 'KaiTi, "STKaiti", serif' },
+  { label: '黑体 (HeiTi)', value: 'SimHei, "Heiti SC", STHeiti, sans-serif' },
+  { label: 'Calibri', value: 'Calibri, Carlito, sans-serif' },
+  { label: 'Light', value: '"Segoe UI Light", "Roboto Light", "Helvetica Neue Light", sans-serif' },
+];
+
+// Mapping readable pixel labels to document.execCommand font scale (1-7)
+const FONT_SIZES = [
+  { label: '8', value: '1' },
+  { label: '9', value: '1' },
+  { label: '10', value: '2' },
+  { label: '11', value: '2' },
+  { label: '12', value: '3' },
+  { label: '14', value: '4' },
+  { label: '16', value: '4' },
+  { label: '18', value: '5' },
+  { label: '20', value: '5' },
+  { label: '24', value: '6' },
+  { label: '30', value: '6' },
+  { label: '36', value: '7' },
+  { label: '48', value: '7' },
+  { label: '60', value: '7' },
+  { label: '72', value: '7' },
+];
 
 export const InputSection: React.FC<InputSectionProps> = ({ 
   title, 
@@ -27,29 +83,50 @@ export const InputSection: React.FC<InputSectionProps> = ({
   onChangeText,
   onAddFiles,
   onRemoveFile,
-  onGenerate
+  onGenerate,
+  onSave
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInsertRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const [activeFormats, setActiveFormats] = useState<string[]>([]);
-  const [currentFont, setCurrentFont] = useState<string>('Inter');
-  const [currentSize, setCurrentSize] = useState<string>('3');
-
-  // Sync initial content or external updates
+  
+  // State for Dropdowns
+  const [showColorMenu, setShowColorMenu] = useState(false);
+  const [showHighlightMenu, setShowHighlightMenu] = useState(false);
+  const [showFontMenu, setShowFontMenu] = useState(false);
+  const [showSizeMenu, setShowSizeMenu] = useState(false);
+  
+  // Close menus when clicking outside
   useEffect(() => {
-    if (editorRef.current && editorRef.current.innerHTML !== text) {
-      // Only update if significantly different to avoid cursor jumping
-      // Logic: If empty, set it. If text is strictly longer (append), update it.
-      // For general typing, we rely on handleInput to keep state in sync, so we don't overwrite user input.
-      // But if the external text changes drastically (like AI append), we must update.
-      const currentLen = editorRef.current.innerHTML.length;
-      const newLen = text.length;
-      
-      // Heuristic: If new text is significantly larger, it's likely an append operation or load
-      if (Math.abs(newLen - currentLen) > 5 || text === "") {
-         editorRef.current.innerHTML = text;
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.toolbar-menu-trigger')) {
+        setShowColorMenu(false);
+        setShowHighlightMenu(false);
+        setShowFontMenu(false);
+        setShowSizeMenu(false);
       }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  // Sync initial content on mount
+  useEffect(() => {
+    if (editorRef.current) {
+       editorRef.current.innerHTML = text;
+    }
+  }, []);
+
+  // Sync if text changes significantly (e.g. AI generation update)
+  useEffect(() => {
+    if (editorRef.current && text !== editorRef.current.innerHTML) {
+       // Only update if the length is significantly different to avoid cursor jumps while typing
+       // or if it's a generated update (usually large)
+       if (Math.abs(editorRef.current.innerHTML.length - text.length) > 10) {
+          editorRef.current.innerHTML = text;
+       }
     }
   }, [text]);
 
@@ -71,9 +148,6 @@ export const InputSection: React.FC<InputSectionProps> = ({
     if (document.queryCommandState('italic')) formats.push('italic');
     if (document.queryCommandState('underline')) formats.push('underline');
     setActiveFormats(formats);
-
-    // Check font and size is harder natively, usually we track what we set or just let it be
-    // For specific UI feedback we would need to inspect the selection's computed style
   };
 
   const execCmd = (command: string, value: string | undefined = undefined) => {
@@ -90,6 +164,27 @@ export const InputSection: React.FC<InputSectionProps> = ({
     }
   };
 
+  const insertPdfPlaceholder = (file: File) => {
+    if (editorRef.current) {
+      editorRef.current.focus();
+      
+      // Raw SVG for the file icon (Red for PDF)
+      const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #ef4444;"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+
+      // Nice looking chip that is non-editable
+      const html = `
+        <span contenteditable="false" class="inline-flex items-center gap-1.5 px-3 py-1 my-1 rounded-lg bg-red-50 text-red-700 border border-red-100 text-sm font-medium select-none align-middle mx-1 shadow-sm">
+          ${svgIcon}
+          <span>${file.name}</span>
+        </span>
+        <span>&nbsp;</span>
+      `;
+
+      document.execCommand('insertHTML', false, html);
+      handleInput();
+    }
+  };
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
@@ -100,8 +195,9 @@ export const InputSection: React.FC<InputSectionProps> = ({
   };
 
   const handlePaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
-    const items = Array.from(e.clipboardData.items) as DataTransferItem[];
-    const imageItem = items.find(item => item.type.startsWith('image/'));
+    // Safely cast to array to avoid iteration issues with DataTransferItemList in some TS configs
+    const items = Array.from(e.clipboardData.items) as any[]; 
+    const imageItem = items.find((item: any) => item.type.startsWith('image/'));
 
     if (imageItem) {
       e.preventDefault();
@@ -115,7 +211,15 @@ export const InputSection: React.FC<InputSectionProps> = ({
 
   const handleAttachmentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      onAddFiles(Array.from(e.target.files));
+      const files = Array.from(e.target.files) as File[];
+      onAddFiles(files);
+      
+      // Insert placeholder for PDFs so they appear in the editor flow
+      files.forEach(file => {
+        if (file.type === 'application/pdf') {
+          insertPdfPlaceholder(file);
+        }
+      });
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -123,229 +227,348 @@ export const InputSection: React.FC<InputSectionProps> = ({
   const isProcessing = status === AppStatus.PROCESSING;
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-full transition-all duration-300 overflow-hidden relative">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-full transition-all duration-300 overflow-visible relative">
       
-      {/* Title Input */}
-      <div className="px-8 pt-8 pb-4">
+      {/* Header: Title Input & Save Button */}
+      <div className="px-6 pt-6 pb-2 flex items-start gap-4 justify-between">
         <input
           type="text"
           value={title}
           onChange={(e) => onChangeTitle(e.target.value)}
           placeholder="Untitled Note"
-          className="w-full text-3xl font-bold text-slate-800 placeholder-slate-300 border-none focus:ring-0 focus:outline-none bg-transparent p-0"
+          className="flex-1 text-3xl font-bold text-slate-800 placeholder-slate-300 border-none focus:ring-0 focus:outline-none bg-transparent p-0"
           disabled={isProcessing}
-        />
-      </div>
-
-      {/* Rich Text Toolbar */}
-      <div className="sticky top-0 z-10 px-6 py-3 border-y border-slate-100 flex items-center gap-2 bg-slate-50/90 backdrop-blur-sm flex-wrap">
-        
-        {/* Font Family Selector */}
-        <div className="relative group">
-          <select 
-            className="appearance-none pl-2 pr-8 py-1.5 rounded-md text-sm border border-slate-200 bg-white hover:border-blue-400 focus:outline-none focus:border-blue-500 cursor-pointer min-w-[100px]"
-            onChange={(e) => {
-              execCmd('fontName', e.target.value);
-              setCurrentFont(e.target.value);
-            }}
-            value={currentFont}
-            title="Font Family"
-          >
-            <option value="Inter">Default</option>
-            <option value="SimSun">宋体 (SimSun)</option>
-            <option value="FangSong">仿宋 (FangSong)</option>
-            <option value="KaiTi">楷体 (KaiTi)</option>
-            <option value="SimHei">黑体 (SimHei)</option>
-            <option value="Arial">Arial</option>
-            <option value="Times New Roman">Times New Roman</option>
-            <option value="Courier New">Courier New</option>
-          </select>
-        </div>
-
-        {/* Font Size Selector */}
-        <div className="relative group">
-           <select 
-            className="appearance-none pl-2 pr-6 py-1.5 rounded-md text-sm border border-slate-200 bg-white hover:border-blue-400 focus:outline-none focus:border-blue-500 cursor-pointer"
-            onChange={(e) => {
-              execCmd('fontSize', e.target.value);
-              setCurrentSize(e.target.value);
-            }}
-            value={currentSize}
-            title="Font Size"
-          >
-            <option value="1">Small</option>
-            <option value="2">Normal</option>
-            <option value="3">Medium</option>
-            <option value="4">Large</option>
-            <option value="5">X-Large</option>
-            <option value="6">Huge</option>
-            <option value="7">Giant</option>
-          </select>
-        </div>
-
-        <div className="w-px h-6 bg-slate-200 mx-2" />
-
-        <ToolbarButton 
-          icon={<Bold size={18} />} 
-          isActive={activeFormats.includes('bold')} 
-          onClick={() => execCmd('bold')} 
-          title="Bold"
-        />
-        <ToolbarButton 
-          icon={<Italic size={18} />} 
-          isActive={activeFormats.includes('italic')} 
-          onClick={() => execCmd('italic')} 
-          title="Italic"
-        />
-        <ToolbarButton 
-          icon={<Underline size={18} />} 
-          isActive={activeFormats.includes('underline')} 
-          onClick={() => execCmd('underline')} 
-          title="Underline"
+          aria-label="Note Title"
         />
         
-        <div className="w-px h-6 bg-slate-200 mx-2" />
-        
-        <ToolbarButton 
-          icon={<Heading1 size={18} />} 
-          onClick={() => execCmd('formatBlock', 'H1')} 
-          title="Heading 1"
-        />
-        <ToolbarButton 
-          icon={<Heading2 size={18} />} 
-          onClick={() => execCmd('formatBlock', 'H2')} 
-          title="Heading 2"
-        />
-        
-        <div className="w-px h-6 bg-slate-200 mx-2" />
-        
-        <ToolbarButton 
-          icon={<ImageIcon size={18} />} 
-          onClick={() => imageInsertRef.current?.click()} 
-          title="Insert Image inline"
-        />
-
-        <div className="flex-grow" />
-
-         <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={isProcessing}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 hover:border-blue-400 hover:text-blue-600 rounded-lg transition-colors shadow-sm"
-          title="Attach PDF for reference"
+        <button
+          onClick={onSave}
+          className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
         >
-          <Paperclip size={14} />
-          <span>Attach PDF</span>
+          <Save size={16} />
+          <span>Save</span>
         </button>
       </div>
 
+      {/* Toolbar */}
+      <div className="px-6 py-2 border-b border-slate-100 flex items-center gap-1 flex-wrap relative z-20">
+        <button
+          onClick={() => execCmd('bold')}
+          className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${activeFormats.includes('bold') ? 'bg-slate-200 text-blue-600' : 'text-slate-500'}`}
+          title="Bold"
+        >
+          <Bold size={18} />
+        </button>
+        <button
+          onClick={() => execCmd('italic')}
+          className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${activeFormats.includes('italic') ? 'bg-slate-200 text-blue-600' : 'text-slate-500'}`}
+          title="Italic"
+        >
+          <Italic size={18} />
+        </button>
+        <button
+          onClick={() => execCmd('underline')}
+          className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${activeFormats.includes('underline') ? 'bg-slate-200 text-blue-600' : 'text-slate-500'}`}
+          title="Underline"
+        >
+          <Underline size={18} />
+        </button>
+        
+        <div className="w-px h-5 bg-slate-200 mx-2" />
+
+        {/* Font Family Dropdown */}
+        <div className="relative toolbar-menu-trigger">
+          <button
+             onClick={() => {
+               setShowFontMenu(!showFontMenu);
+               setShowSizeMenu(false);
+               setShowColorMenu(false);
+               setShowHighlightMenu(false);
+             }}
+             className={`flex items-center gap-1 p-1.5 rounded hover:bg-slate-100 transition-colors ${showFontMenu ? 'bg-slate-100 text-blue-600' : 'text-slate-500'}`}
+             title="Font Family"
+          >
+             <Type size={18} />
+             <ChevronDown size={12} />
+          </button>
+          {showFontMenu && (
+            <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 shadow-xl rounded-lg p-1 w-48 animate-fade-in z-50 max-h-60 overflow-y-auto">
+              {FONT_FAMILIES.map((font) => (
+                <button
+                  key={font.label}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    execCmd('fontName', font.value);
+                    setShowFontMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-md font-medium truncate"
+                  style={{ fontFamily: font.value.split(',')[0] }}
+                >
+                  {font.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Font Size Dropdown */}
+        <div className="relative toolbar-menu-trigger">
+          <button
+             onClick={() => {
+               setShowSizeMenu(!showSizeMenu);
+               setShowFontMenu(false);
+               setShowColorMenu(false);
+               setShowHighlightMenu(false);
+             }}
+             className={`flex items-center gap-1 p-1.5 rounded hover:bg-slate-100 transition-colors ${showSizeMenu ? 'bg-slate-100 text-blue-600' : 'text-slate-500'}`}
+             title="Font Size"
+          >
+             <ALargeSmall size={18} />
+             <ChevronDown size={12} />
+          </button>
+          {showSizeMenu && (
+            <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 shadow-xl rounded-lg p-1 w-20 animate-fade-in z-50 max-h-60 overflow-y-auto">
+              {FONT_SIZES.map((size) => (
+                <button
+                  key={size.label}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    execCmd('fontSize', size.value);
+                    setShowSizeMenu(false);
+                  }}
+                  className="w-full text-center px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-md font-medium"
+                >
+                  {size.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="w-px h-5 bg-slate-200 mx-2" />
+
+        {/* Text Color Dropdown */}
+        <div className="relative toolbar-menu-trigger">
+          <button
+             onClick={() => {
+               setShowColorMenu(!showColorMenu);
+               setShowHighlightMenu(false);
+               setShowFontMenu(false);
+               setShowSizeMenu(false);
+             }}
+             className={`flex items-center gap-1 p-1.5 rounded hover:bg-slate-100 transition-colors ${showColorMenu ? 'bg-slate-100 text-blue-600' : 'text-slate-500'}`}
+             title="Text Color"
+          >
+             <Palette size={18} />
+             <ChevronDown size={12} />
+          </button>
+          {showColorMenu && (
+            <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 shadow-xl rounded-lg p-2 grid grid-cols-4 gap-2 w-48 animate-fade-in z-50">
+              {TEXT_COLORS.map((c) => (
+                <button
+                  key={c.label}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    execCmd('foreColor', c.value);
+                    setShowColorMenu(false);
+                  }}
+                  className="w-8 h-8 rounded-full border border-slate-100 shadow-sm hover:scale-110 transition-transform flex items-center justify-center relative group"
+                  title={c.label}
+                >
+                  <div className={`w-6 h-6 rounded-full ${c.class}`}></div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Highlight Color Dropdown */}
+        <div className="relative toolbar-menu-trigger">
+           <button
+             onClick={() => {
+               setShowHighlightMenu(!showHighlightMenu);
+               setShowColorMenu(false);
+               setShowFontMenu(false);
+               setShowSizeMenu(false);
+             }}
+             className={`flex items-center gap-1 p-1.5 rounded hover:bg-slate-100 transition-colors ${showHighlightMenu ? 'bg-slate-100 text-blue-600' : 'text-slate-500'}`}
+             title="Highlight Color"
+           >
+             <Highlighter size={18} />
+             <ChevronDown size={12} />
+           </button>
+           {showHighlightMenu && (
+            <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 shadow-xl rounded-lg p-2 grid grid-cols-4 gap-2 w-48 animate-fade-in z-50">
+              {HIGHLIGHT_COLORS.map((c) => (
+                <button
+                  key={c.label}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    execCmd('hiliteColor', c.value); 
+                    setShowHighlightMenu(false);
+                  }}
+                  className="w-8 h-8 rounded-full border border-slate-100 shadow-sm hover:scale-110 transition-transform flex items-center justify-center"
+                  title={c.label}
+                >
+                   <div className={`w-6 h-6 rounded-full ${c.class}`}></div>
+                   {c.value === 'transparent' && (
+                     <div className="absolute inset-0 flex items-center justify-center text-slate-400">
+                        <div className="w-5 h-0.5 bg-red-400 rotate-45"></div>
+                     </div>
+                   )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="w-px h-5 bg-slate-200 mx-2" />
+        
+        <button
+          onClick={() => execCmd('formatBlock', 'H1')}
+          className="p-1.5 rounded hover:bg-slate-100 text-slate-500 transition-colors"
+          title="Heading 1"
+        >
+          <Heading1 size={18} />
+        </button>
+        <button
+          onClick={() => execCmd('formatBlock', 'H2')}
+          className="p-1.5 rounded hover:bg-slate-100 text-slate-500 transition-colors"
+          title="Heading 2"
+        >
+          <Heading2 size={18} />
+        </button>
+        <div className="w-px h-5 bg-slate-200 mx-2" />
+        <button
+          onClick={() => imageInsertRef.current?.click()}
+          className="p-1.5 rounded hover:bg-slate-100 text-slate-500 transition-colors"
+          title="Insert Image"
+        >
+          <ImageIcon size={18} />
+        </button>
+        <input 
+          type="file" 
+          ref={imageInsertRef} 
+          className="hidden" 
+          accept="image/*"
+          onChange={handleImageUpload}
+        />
+      </div>
+      
       {/* Editor Area */}
-      <div className="flex-grow relative overflow-hidden flex flex-col bg-white">
-        <div 
+      <div className="flex-1 overflow-y-auto cursor-text relative" onClick={() => editorRef.current?.focus()}>
+        <div
           ref={editorRef}
           contentEditable={!isProcessing}
+          className="outline-none min-h-full px-6 py-4 prose prose-slate max-w-none pb-24"
           onInput={handleInput}
+          onKeyDown={(e) => {
+            if (e.key === 'Tab') {
+              e.preventDefault();
+              document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;');
+            }
+          }}
           onPaste={handlePaste}
           onMouseUp={checkFormats}
           onKeyUp={checkFormats}
-          className="flex-grow w-full px-8 py-6 text-slate-700 focus:outline-none overflow-y-auto max-w-none prose prose-slate prose-lg prose-p:my-2 prose-headings:mb-3 prose-headings:mt-6 prose-img:rounded-xl prose-img:shadow-md prose-img:max-h-[500px] prose-img:w-auto prose-img:my-4 prose-ul:my-2 prose-li:my-0.5"
-          style={{ minHeight: '400px' }}
-          data-placeholder="Start typing your notes here..."
         />
-        
-        {!text && (
-          <div className="absolute top-6 left-8 text-slate-400 pointer-events-none select-none text-lg">
-            Start typing your notes... drag & drop images or use the toolbar...
-          </div>
+        {/* Placeholder text mechanism could be added here if editor is empty */}
+        {text === "" && (
+            <div className="absolute top-4 left-6 text-slate-400 pointer-events-none select-none">
+                Start typing your messy notes here...
+            </div>
         )}
       </div>
 
-      {/* Attachments Preview Area (PDFs only) */}
-      {previews.length > 0 && (
-        <div className="px-8 pb-4 bg-slate-50 border-t border-slate-100 pt-3">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-              Attachments (Context for AI)
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2">
+      {/* Footer / Action Area */}
+      <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-col gap-4 z-10">
+        {/* Attachments List */}
+        {previews.length > 0 && (
+          <div className="flex flex-wrap gap-3">
             {previews.map((preview, index) => (
-              <div key={index} className="flex items-center gap-2 bg-white pr-2 rounded-md border border-slate-200 shadow-sm group">
-                <div className="h-8 w-8 flex items-center justify-center bg-red-50 text-red-500 rounded-l-md border-r border-slate-100">
-                   <FileIcon size={14} />
-                </div>
-                <span className="text-xs text-slate-600 max-w-[150px] truncate font-medium">{preview.file.name}</span>
+              <div key={index} className="relative group animate-fade-in-up">
+                {preview.type === 'pdf' ? (
+                  <div className="w-16 h-16 bg-red-50 border border-red-100 rounded-lg flex flex-col items-center justify-center text-red-500 shadow-sm">
+                    <FileIcon size={24} />
+                    <span className="text-[10px] uppercase font-bold mt-1">PDF</span>
+                  </div>
+                ) : (
+                  <img
+                    src={preview.url}
+                    alt="attachment"
+                    className="w-16 h-16 object-cover rounded-lg border border-slate-200 shadow-sm bg-white"
+                  />
+                )}
                 <button
                   onClick={() => onRemoveFile(index)}
-                  className="text-slate-300 hover:text-red-500 transition-colors px-1"
+                  className="absolute -top-2 -right-2 bg-white text-slate-400 hover:text-red-500 rounded-full p-1 shadow-md border border-slate-100 opacity-0 group-hover:opacity-100 transition-all scale-75 hover:scale-100"
                 >
-                  <X size={14} />
+                  <X size={12} />
                 </button>
               </div>
             ))}
           </div>
+        )}
+
+        {/* Action Row */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2 px-3 py-2 text-slate-600 bg-white border border-slate-200 hover:border-blue-300 hover:text-blue-600 rounded-lg text-sm font-medium transition-all shadow-sm"
+              disabled={isProcessing}
+            >
+              <Paperclip size={18} />
+              <span className="hidden sm:inline">Attach File</span>
+            </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleAttachmentChange}
+              className="hidden"
+              multiple
+              accept="image/*,.pdf"
+            />
+            <div className="text-xs text-slate-400 hidden sm:block">
+              Supports Images & PDF
+            </div>
+          </div>
+
+          <button
+            onClick={onGenerate}
+            disabled={isProcessing || (text.trim() === '' && previews.length === 0)}
+            className={`
+              flex items-center gap-2 px-6 py-2.5 rounded-xl font-semibold shadow-md transition-all
+              ${isProcessing || (text.trim() === '' && previews.length === 0)
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:shadow-lg hover:scale-[1.02] active:scale-95'
+              }
+            `}
+          >
+            {isProcessing ? (
+              <>
+                <Loader2 size={20} className="animate-spin" />
+                <span>Processing...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles size={20} className="text-yellow-300" />
+                <span>Generate Smart Note</span>
+              </>
+            )}
+          </button>
         </div>
-      )}
-
-      {/* Hidden Inputs */}
-      <input
-        type="file"
-        ref={imageInsertRef}
-        onChange={handleImageUpload}
-        accept="image/*"
-        className="hidden"
-      />
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleAttachmentChange}
-        accept=".pdf"
-        multiple
-        className="hidden"
-      />
-
-      {/* Floating Action Button for Generation */}
-      <div className="absolute bottom-8 right-8 z-20">
-        <button
-          onClick={onGenerate}
-          disabled={isProcessing || (!text.trim() && previews.length === 0)}
-          className="py-3 px-6 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-medium shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none hover:-translate-y-1 active:scale-95"
-        >
-          {isProcessing ? (
-            <Loader2 size={20} className="animate-spin" />
-          ) : (
-            <Sparkles size={20} />
-          )}
-          <span>{isProcessing ? 'Thinking...' : 'Generate Smart Note'}</span>
-        </button>
       </div>
     </div>
   );
 };
 
-const ToolbarButton: React.FC<{
-  icon: React.ReactNode;
-  onClick: () => void;
-  isActive?: boolean;
-  title: string;
-}> = ({ icon, onClick, isActive, title }) => (
-  <button
-    onClick={onClick}
-    title={title}
-    className={`p-2 rounded-md transition-all ${
-      isActive 
-        ? 'bg-blue-50 text-blue-600' 
-        : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
-    }`}
-  >
-    {icon}
-  </button>
-);
-
-const fileToBase64 = (file: File): Promise<string> => {
+// Helper function to convert File to base64
+function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = () => resolve(reader.result as string);
     reader.onerror = error => reject(error);
   });
-};
+}

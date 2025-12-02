@@ -2,7 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { InputSection } from './components/InputSection';
 import { generateSmartNote, markdownToHtml } from './services/geminiService';
 import { AppStatus, NoteSession, ImagePreview } from './types';
-import { BrainCircuit, Plus, FileText, ChevronRight, Menu, X, MessageSquarePlus } from 'lucide-react';
+import { loadNotesFromStorage, saveNotesToStorage } from './services/storageService';
+import { 
+  BrainCircuit, Plus, FileText, ChevronRight, Menu, X, MessageSquarePlus,
+  Loader2, CheckCircle2, AlertCircle, Trash2, AlertTriangle
+} from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -18,11 +22,45 @@ const createNewNote = (): NoteSession => ({
 });
 
 const App: React.FC = () => {
-  const [notes, setNotes] = useState<NoteSession[]>([createNewNote()]);
+  // Initialize state from local storage or create a default note
+  const [notes, setNotes] = useState<NoteSession[]>(() => {
+    const saved = loadNotesFromStorage();
+    return saved && saved.length > 0 ? saved : [createNewNote()];
+  });
+  
   const [activeNoteId, setActiveNoteId] = useState<string>(notes[0].id);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
+  // Ensure activeNote is always valid, fallback to first note if ID not found
   const activeNote = notes.find(n => n.id === activeNoteId) || notes[0];
+
+  // Auto-save effect: Triggers 2 seconds after the last change to 'notes'
+  useEffect(() => {
+    if (notes.length === 0) return;
+    setSaveStatus('saving');
+    const timer = setTimeout(() => {
+      const success = saveNotesToStorage(notes);
+      setSaveStatus(success ? 'saved' : 'error');
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [notes]);
+
+  // Ensure activeNoteId is valid when notes change
+  useEffect(() => {
+    if (!notes.find(n => n.id === activeNoteId)) {
+      if (notes.length > 0) {
+        setActiveNoteId(notes[0].id);
+      } else {
+        // If all notes were deleted (should be handled in delete handler, but as safeguard)
+        const newNote = createNewNote();
+        setNotes([newNote]);
+        setActiveNoteId(newNote.id);
+      }
+    }
+  }, [notes, activeNoteId]);
 
   const updateActiveNote = (updates: Partial<NoteSession>) => {
     setNotes(prev => prev.map(note => 
@@ -37,6 +75,63 @@ const App: React.FC = () => {
     if (window.innerWidth < 1024) {
       setIsSidebarOpen(false);
     }
+    // Immediate save
+    saveNotesToStorage([newNote, ...notes]);
+  };
+
+  const requestDeleteNote = (e: React.MouseEvent, noteId: string) => {
+    // Strictly stop propagation to prevent the row click handler from firing
+    e.preventDefault();
+    e.stopPropagation();
+    setDeleteTargetId(noteId);
+  };
+
+  const confirmDeleteNote = () => {
+    if (!deleteTargetId) return;
+    const noteId = deleteTargetId;
+
+    // 1. Determine the new list of notes
+    const newNotes = notes.filter(n => n.id !== noteId);
+    
+    // 2. Handle empty state: If last note deleted, create a fresh one
+    if (newNotes.length === 0) {
+      const freshNote = createNewNote();
+      setNotes([freshNote]);
+      setActiveNoteId(freshNote.id);
+      saveNotesToStorage([freshNote]);
+      setDeleteTargetId(null);
+      return;
+    }
+
+    // 3. Update active note if we deleted the current one
+    if (activeNoteId === noteId) {
+      // Find index of the deleted note in the original list
+      const deletedIndex = notes.findIndex(n => n.id === noteId);
+      
+      // Try to go to the previous note (above), otherwise go to the next (below/first)
+      // Adjust index to be valid in the new array
+      let newActiveIndex = deletedIndex > 0 ? deletedIndex - 1 : 0;
+      
+      // Ensure bounds safety
+      if (newActiveIndex >= newNotes.length) {
+        newActiveIndex = newNotes.length - 1;
+      }
+      
+      setActiveNoteId(newNotes[newActiveIndex].id);
+    }
+
+    // 4. Update state and force save
+    setNotes(newNotes);
+    saveNotesToStorage(newNotes);
+    setDeleteTargetId(null);
+  };
+
+  const handleManualSave = () => {
+    setSaveStatus('saving');
+    const success = saveNotesToStorage(notes);
+    setTimeout(() => {
+      setSaveStatus(success ? 'saved' : 'error');
+    }, 500);
   };
 
   const handleSwitchNote = (id: string) => {
@@ -59,19 +154,28 @@ const App: React.FC = () => {
       // Convert Markdown to HTML for the editor
       const aiHtml = markdownToHtml(markdown);
       
-      // Append to current text with a separator
-      const separator = `<br/><br/><hr style="margin: 2em 0; border: 0; border-top: 2px dashed #e2e8f0;"/><h2 style="color: #2563eb;">✨ AI Smart Note</h2><br/>`;
+      // Append to current text with a separator and timestamp versioning
+      const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const separator = `<br/><br/><hr style="margin: 2em 0; border: 0; border-top: 2px dashed #e2e8f0;"/><h2 style="color: #2563eb; font-size: 1.25em;">✨ Smart Note Update (${timestamp})</h2><br/>`;
       const newContent = activeNote.inputText + separator + aiHtml;
 
-      updateActiveNote({
+      const updatedNote = {
+        ...activeNote,
         inputText: newContent,
         result: {
-          markdown,
-          timestamp: Date.now()
+            markdown,
+            timestamp: Date.now()
         },
         status: AppStatus.SUCCESS,
         title: activeNote.title || "Smart Note " + new Date().toLocaleDateString()
-      });
+      };
+
+      // Update state manually to ensure immediate sync for save
+      setNotes(prev => prev.map(n => n.id === activeNoteId ? updatedNote : n));
+      
+      // Trigger an immediate save after generation
+      saveNotesToStorage(notes.map(n => n.id === activeNoteId ? updatedNote : n));
+      
     } catch (err: any) {
       console.error(err);
       updateActiveNote({
@@ -94,10 +198,12 @@ const App: React.FC = () => {
   };
 
   const handleRemoveFile = (index: number) => {
-    URL.revokeObjectURL(activeNote.attachments[index].url);
-    const newAttachments = [...activeNote.attachments];
-    newAttachments.splice(index, 1);
-    updateActiveNote({ attachments: newAttachments });
+    if (activeNote.attachments[index]) {
+        URL.revokeObjectURL(activeNote.attachments[index].url);
+        const newAttachments = [...activeNote.attachments];
+        newAttachments.splice(index, 1);
+        updateActiveNote({ attachments: newAttachments });
+    }
   };
 
   useEffect(() => {
@@ -147,17 +253,17 @@ const App: React.FC = () => {
 
         <div className="flex-1 overflow-y-auto px-3 space-y-1">
           {notes.map(note => (
-            <button
+            <div
               key={note.id}
               onClick={() => handleSwitchNote(note.id)}
-              className={`w-full text-left p-3.5 rounded-xl text-sm flex items-start gap-3 transition-all duration-200 border ${
+              className={`group w-full text-left p-3.5 rounded-xl text-sm flex items-start gap-3 transition-all duration-200 border cursor-pointer relative ${
                 activeNoteId === note.id 
                   ? 'bg-blue-50/50 text-blue-700 border-blue-100 shadow-sm' 
                   : 'hover:bg-slate-50 text-slate-600 border-transparent'
               }`}
             >
               <FileText size={18} className={`mt-0.5 flex-shrink-0 ${activeNoteId === note.id ? 'text-blue-500' : 'text-slate-400'}`} />
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 pr-6">
                 <div className={`font-semibold truncate ${activeNoteId === note.id ? 'text-slate-900' : 'text-slate-700'}`}>
                   {note.title || "Untitled Note"}
                 </div>
@@ -165,13 +271,36 @@ const App: React.FC = () => {
                   {new Date(note.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                 </div>
               </div>
-              {activeNoteId === note.id && <ChevronRight size={14} className="mt-1 opacity-50" />}
-            </button>
+              
+              {/* Delete Button */}
+              <button
+                onClick={(e) => requestDeleteNote(e, note.id)}
+                className={`
+                    absolute right-2 top-1/2 -translate-y-1/2 p-2 
+                    rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 
+                    transition-all z-20
+                    opacity-0 group-hover:opacity-100 focus:opacity-100
+                    ${activeNoteId === note.id ? 'opacity-100' : ''}
+                `}
+                title="Delete Note"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
           ))}
         </div>
 
-        <div className="p-4 border-t border-slate-100 bg-slate-50/50 text-xs text-slate-400 text-center font-medium">
-          Powered by Gemini 2.5
+        <div className="p-4 border-t border-slate-100 bg-slate-50/50 text-xs text-slate-400 text-center font-medium flex flex-col gap-2">
+          <div className={`flex items-center justify-center gap-1.5 transition-colors ${saveStatus === 'error' ? 'text-red-500' : 'text-slate-400'}`}>
+            {saveStatus === 'saving' && <Loader2 size={12} className="animate-spin" />}
+            {saveStatus === 'saved' && <CheckCircle2 size={12} />}
+            {saveStatus === 'error' && <AlertCircle size={12} />}
+            <span>
+              {saveStatus === 'saving' ? 'Saving...' : 
+               saveStatus === 'saved' ? 'Synced to storage' : 'Save failed'}
+            </span>
+          </div>
+          <div>Powered by Gemini 2.5</div>
         </div>
       </aside>
 
@@ -188,18 +317,31 @@ const App: React.FC = () => {
               {activeNote.title || "Untitled Note"}
             </span>
           </div>
-          <button onClick={handleAddNote} className="text-blue-600 p-2">
-            <MessageSquarePlus size={24} />
-          </button>
+          <div className="flex items-center gap-1">
+             <button onClick={handleManualSave} className="text-blue-600 p-2">
+                <CheckCircle2 size={22} />
+             </button>
+             <button onClick={handleAddNote} className="text-slate-600 p-2">
+               <MessageSquarePlus size={24} />
+             </button>
+          </div>
         </header>
 
         {/* Content Container */}
         <main className="flex-1 overflow-hidden bg-slate-100/50 p-0 lg:p-6">
           <div className="h-full max-w-5xl mx-auto flex flex-col">
             
-            {/* Input Section (Now acts as the main Document Editor) */}
+            {/* Input Section (Document Editor) */}
             <div className="flex-1 h-full min-h-0">
+               {/* 
+                  KEY PROP IS CRITICAL: 
+                  It forces React to fully unmount the old editor and mount a new one 
+                  whenever the activeNote.id changes. This ensures that when a note is 
+                  deleted and we switch to the next one, the editor DOES NOT hold onto 
+                  stale content from the deleted note.
+               */}
                <InputSection 
+                 key={activeNote.id}
                  title={activeNote.title}
                  text={activeNote.inputText}
                  previews={activeNote.attachments}
@@ -209,6 +351,7 @@ const App: React.FC = () => {
                  onAddFiles={handleAddFiles}
                  onRemoveFile={handleRemoveFile}
                  onGenerate={handleGenerate}
+                 onSave={handleManualSave}
                />
                
                {activeNote.error && (
@@ -225,6 +368,37 @@ const App: React.FC = () => {
           </div>
         </main>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteTargetId && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm animate-in fade-in duration-200">
+           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 transform transition-all scale-100 animate-in zoom-in-95 duration-200 border border-slate-100">
+              <div className="flex flex-col items-center text-center">
+                 <div className="w-12 h-12 bg-red-100 text-red-500 rounded-full flex items-center justify-center mb-4">
+                    <AlertTriangle size={24} />
+                 </div>
+                 <h3 className="text-lg font-bold text-slate-900 mb-2">Delete Note?</h3>
+                 <p className="text-slate-500 text-sm mb-6">
+                   Are you sure you want to delete this note? This action cannot be undone and the content will be permanently lost.
+                 </p>
+                 <div className="flex w-full gap-3">
+                    <button 
+                      onClick={() => setDeleteTargetId(null)}
+                      className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      onClick={confirmDeleteNote}
+                      className="flex-1 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium transition-colors shadow-sm shadow-red-200"
+                    >
+                      Delete
+                    </button>
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 };
