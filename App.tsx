@@ -5,7 +5,7 @@ import { AppStatus, NoteSession, ImagePreview } from './types';
 import { loadNotesFromStorage, saveNotesToStorage } from './services/storageService';
 import { 
   BrainCircuit, Plus, FileText, ChevronRight, Menu, X, MessageSquarePlus,
-  Loader2, CheckCircle2, AlertCircle, Trash2, AlertTriangle
+  Loader2, CheckCircle2, AlertCircle, Trash2, AlertTriangle, Search
 } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -32,6 +32,7 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Ensure activeNote is always valid, fallback to first note if ID not found
   const activeNote = notes.find(n => n.id === activeNoteId) || notes[0];
@@ -62,6 +63,16 @@ const App: React.FC = () => {
     }
   }, [notes, activeNoteId]);
 
+  // Filter notes based on search query
+  const filteredNotes = notes.filter(note => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return true;
+    
+    const titleMatch = (note.title || '').toLowerCase().includes(query);
+    const contentMatch = (note.inputText || '').toLowerCase().includes(query);
+    return titleMatch || contentMatch;
+  });
+
   const updateActiveNote = (updates: Partial<NoteSession>) => {
     setNotes(prev => prev.map(note => 
       note.id === activeNoteId ? { ...note, ...updates } : note
@@ -69,6 +80,7 @@ const App: React.FC = () => {
   };
 
   const handleAddNote = () => {
+    setSearchQuery(''); // Clear search so the new note is visible
     const newNote = createNewNote();
     setNotes(prev => [newNote, ...prev]);
     setActiveNoteId(newNote.id);
@@ -241,7 +253,19 @@ const App: React.FC = () => {
           </button>
         </div>
 
-        <div className="p-5">
+        <div className="p-5 pb-2">
+          {/* Search Bar */}
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input 
+              type="text" 
+              placeholder="Search notes..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400"
+            />
+          </div>
+
           <button 
             onClick={handleAddNote}
             className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-medium flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 group"
@@ -251,8 +275,13 @@ const App: React.FC = () => {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-3 space-y-1">
-          {notes.map(note => (
+        <div className="flex-1 overflow-y-auto px-3 space-y-1 mt-2">
+          {filteredNotes.length === 0 && searchQuery && (
+            <div className="text-center text-slate-400 text-sm py-8 px-4">
+              No notes found matching "{searchQuery}"
+            </div>
+          )}
+          {filteredNotes.map(note => (
             <div
               key={note.id}
               onClick={() => handleSwitchNote(note.id)}
