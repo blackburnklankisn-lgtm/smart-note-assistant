@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { InputSection } from './components/InputSection';
 import { generateSmartNote, markdownToHtml } from './services/geminiService';
 import { AppStatus, NoteSession, ImagePreview } from './types';
 import { loadNotesFromStorage, saveNotesToStorage } from './services/storageService';
 import { 
   BrainCircuit, Plus, FileText, ChevronRight, Menu, X, MessageSquarePlus,
-  Loader2, CheckCircle2, AlertCircle, Trash2, AlertTriangle, Search
+  Loader2, CheckCircle2, AlertCircle, Trash2, AlertTriangle, Search, GripVertical
 } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -33,6 +33,11 @@ const App: React.FC = () => {
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Resizable Sidebar State
+  const [sidebarWidth, setSidebarWidth] = useState(288); // Default 288px (w-72)
+  const [isResizing, setIsResizing] = useState(false);
+  const sidebarRef = useRef<HTMLDivElement>(null);
 
   // Ensure activeNote is always valid, fallback to first note if ID not found
   const activeNote = notes.find(n => n.id === activeNoteId) || notes[0];
@@ -62,6 +67,49 @@ const App: React.FC = () => {
       }
     }
   }, [notes, activeNoteId]);
+
+  // Handle Resizing Logic
+  const startResizing = useCallback(() => {
+    setIsResizing(true);
+  }, []);
+
+  const stopResizing = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  const resize = useCallback(
+    (mouseMoveEvent: MouseEvent) => {
+      if (isResizing) {
+        const newWidth = mouseMoveEvent.clientX;
+        // Set constraints: Min 200px, Max 600px
+        if (newWidth >= 200 && newWidth <= 600) {
+          setSidebarWidth(newWidth);
+        }
+      }
+    },
+    [isResizing]
+  );
+
+  useEffect(() => {
+    if (isResizing) {
+      window.addEventListener("mousemove", resize);
+      window.addEventListener("mouseup", stopResizing);
+      // Disable text selection while dragging
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "col-resize";
+    } else {
+      window.removeEventListener("mousemove", resize);
+      window.removeEventListener("mouseup", stopResizing);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    }
+    return () => {
+      window.removeEventListener("mousemove", resize);
+      window.removeEventListener("mouseup", stopResizing);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [isResizing, resize, stopResizing]);
 
   // Filter notes based on search query
   const filteredNotes = notes.filter(note => {
@@ -237,101 +285,121 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* Sidebar */}
-      <aside className={`
-        fixed inset-y-0 left-0 z-40 w-72 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out flex flex-col shadow-xl lg:shadow-none
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        lg:relative lg:translate-x-0
-      `}>
-        <div className="p-5 border-b border-slate-100 flex items-center justify-between h-20">
-          <div className="flex items-center gap-2 text-blue-700 font-bold text-xl tracking-tight">
-            <BrainCircuit size={28} />
-            <span>Smart Note</span>
-          </div>
-          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-slate-600 transition-colors">
-            <X size={24} />
-          </button>
-        </div>
-
-        <div className="p-5 pb-2">
-          {/* Search Bar */}
-          <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input 
-              type="text" 
-              placeholder="Search notes..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400"
-            />
-          </div>
-
-          <button 
-            onClick={handleAddNote}
-            className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-medium flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 group"
-          >
-            <Plus size={20} className="group-hover:rotate-90 transition-transform duration-300" />
-            New Note
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-3 space-y-1 mt-2">
-          {filteredNotes.length === 0 && searchQuery && (
-            <div className="text-center text-slate-400 text-sm py-8 px-4">
-              No notes found matching "{searchQuery}"
+      {/* Sidebar Container with Resize Support */}
+      <div 
+        className="relative flex-shrink-0 z-40 lg:z-auto transition-transform lg:transition-none"
+        style={{
+          width: window.innerWidth >= 1024 ? `${sidebarWidth}px` : '18rem',
+        }}
+      >
+        <aside 
+          ref={sidebarRef}
+          className={`
+            fixed inset-y-0 left-0 w-72 lg:w-full bg-white border-r border-slate-200 
+            transform transition-transform duration-300 ease-in-out flex flex-col shadow-xl lg:shadow-none
+            ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+            lg:relative lg:translate-x-0 lg:h-full
+          `}
+        >
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between h-20">
+            <div className="flex items-center gap-2 text-blue-700 font-bold text-xl tracking-tight">
+              <BrainCircuit size={28} />
+              <span className="truncate">Smart Note</span>
             </div>
-          )}
-          {filteredNotes.map(note => (
-            <div
-              key={note.id}
-              onClick={() => handleSwitchNote(note.id)}
-              className={`group w-full text-left p-3.5 rounded-xl text-sm flex items-start gap-3 transition-all duration-200 border cursor-pointer relative ${
-                activeNoteId === note.id 
-                  ? 'bg-blue-50/50 text-blue-700 border-blue-100 shadow-sm' 
-                  : 'hover:bg-slate-50 text-slate-600 border-transparent'
-              }`}
+            <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-slate-600 transition-colors">
+              <X size={24} />
+            </button>
+          </div>
+
+          <div className="p-5 pb-2">
+            {/* Search Bar */}
+            <div className="relative mb-4">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input 
+                type="text" 
+                placeholder="Search notes..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400"
+              />
+            </div>
+
+            <button 
+              onClick={handleAddNote}
+              className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-medium flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 group"
             >
-              <FileText size={18} className={`mt-0.5 flex-shrink-0 ${activeNoteId === note.id ? 'text-blue-500' : 'text-slate-400'}`} />
-              <div className="flex-1 min-w-0 pr-6">
-                <div className={`font-semibold truncate ${activeNoteId === note.id ? 'text-slate-900' : 'text-slate-700'}`}>
-                  {note.title || "Untitled Note"}
-                </div>
-                <div className="text-xs text-slate-400 mt-1 truncate font-medium">
-                  {new Date(note.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                </div>
-              </div>
-              
-              {/* Delete Button */}
-              <button
-                onClick={(e) => requestDeleteNote(e, note.id)}
-                className={`
-                    absolute right-2 top-1/2 -translate-y-1/2 p-2 
-                    rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 
-                    transition-all z-20
-                    opacity-0 group-hover:opacity-100 focus:opacity-100
-                    ${activeNoteId === note.id ? 'opacity-100' : ''}
-                `}
-                title="Delete Note"
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-          ))}
-        </div>
-
-        <div className="p-4 border-t border-slate-100 bg-slate-50/50 text-xs text-slate-400 text-center font-medium flex flex-col gap-2">
-          <div className={`flex items-center justify-center gap-1.5 transition-colors ${saveStatus === 'error' ? 'text-red-500' : 'text-slate-400'}`}>
-            {saveStatus === 'saving' && <Loader2 size={12} className="animate-spin" />}
-            {saveStatus === 'saved' && <CheckCircle2 size={12} />}
-            {saveStatus === 'error' && <AlertCircle size={12} />}
-            <span>
-              {saveStatus === 'saving' ? 'Saving...' : 
-               saveStatus === 'saved' ? 'Synced to storage' : 'Save failed'}
-            </span>
+              <Plus size={20} className="group-hover:rotate-90 transition-transform duration-300" />
+              New Note
+            </button>
           </div>
-          <div>Powered by Gemini 2.5</div>
+
+          <div className="flex-1 overflow-y-auto px-3 space-y-1 mt-2">
+            {filteredNotes.length === 0 && searchQuery && (
+              <div className="text-center text-slate-400 text-sm py-8 px-4">
+                No notes found matching "{searchQuery}"
+              </div>
+            )}
+            {filteredNotes.map(note => (
+              <div
+                key={note.id}
+                onClick={() => handleSwitchNote(note.id)}
+                className={`group w-full text-left p-3.5 rounded-xl text-sm flex items-start gap-3 transition-all duration-200 border cursor-pointer relative ${
+                  activeNoteId === note.id 
+                    ? 'bg-blue-50/50 text-blue-700 border-blue-100 shadow-sm' 
+                    : 'hover:bg-slate-50 text-slate-600 border-transparent'
+                }`}
+              >
+                <FileText size={18} className={`mt-0.5 flex-shrink-0 ${activeNoteId === note.id ? 'text-blue-500' : 'text-slate-400'}`} />
+                <div className="flex-1 min-w-0 pr-6">
+                  <div className={`font-semibold truncate ${activeNoteId === note.id ? 'text-slate-900' : 'text-slate-700'}`}>
+                    {note.title || "Untitled Note"}
+                  </div>
+                  <div className="text-xs text-slate-400 mt-1 truncate font-medium">
+                    {new Date(note.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                  </div>
+                </div>
+                
+                {/* Delete Button */}
+                <button
+                  onClick={(e) => requestDeleteNote(e, note.id)}
+                  className={`
+                      absolute right-2 top-1/2 -translate-y-1/2 p-2 
+                      rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 
+                      transition-all z-20
+                      opacity-0 group-hover:opacity-100 focus:opacity-100
+                      ${activeNoteId === note.id ? 'opacity-100' : ''}
+                  `}
+                  title="Delete Note"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="p-4 border-t border-slate-100 bg-slate-50/50 text-xs text-slate-400 text-center font-medium flex flex-col gap-2">
+            <div className={`flex items-center justify-center gap-1.5 transition-colors ${saveStatus === 'error' ? 'text-red-500' : 'text-slate-400'}`}>
+              {saveStatus === 'saving' && <Loader2 size={12} className="animate-spin" />}
+              {saveStatus === 'saved' && <CheckCircle2 size={12} />}
+              {saveStatus === 'error' && <AlertCircle size={12} />}
+              <span>
+                {saveStatus === 'saving' ? 'Saving...' : 
+                 saveStatus === 'saved' ? 'Synced to storage' : 'Save failed'}
+              </span>
+            </div>
+            <div>Powered by Gemini 2.5</div>
+          </div>
+        </aside>
+
+        {/* Resizer Handle */}
+        <div
+          className={`hidden lg:flex w-2 absolute top-0 right-0 bottom-0 z-50 cursor-col-resize items-center justify-center hover:bg-blue-500/10 transition-colors group ${isResizing ? 'bg-blue-500/10' : ''}`}
+          style={{ transform: 'translateX(50%)' }}
+          onMouseDown={startResizing}
+        >
+          <div className={`w-0.5 h-8 bg-slate-300 rounded-full group-hover:bg-blue-400 transition-colors ${isResizing ? 'bg-blue-500' : ''}`} />
         </div>
-      </aside>
+      </div>
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
@@ -358,10 +426,11 @@ const App: React.FC = () => {
 
         {/* Content Container */}
         <main className="flex-1 overflow-hidden bg-slate-100/50 p-0 lg:p-6">
-          <div className="h-full max-w-5xl mx-auto flex flex-col">
+          {/* Removed max-w-5xl restriction to allow larger resizing */}
+          <div className="h-full w-full mx-auto flex flex-col items-center">
             
             {/* Input Section (Document Editor) */}
-            <div className="flex-1 h-full min-h-0">
+            <div className="flex-1 h-full min-h-0 w-full overflow-visible">
                {/* 
                   KEY PROP IS CRITICAL: 
                   It forces React to fully unmount the old editor and mount a new one 

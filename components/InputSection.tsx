@@ -89,6 +89,7 @@ export const InputSection: React.FC<InputSectionProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInsertRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [activeFormats, setActiveFormats] = useState<string[]>([]);
   
   // State for Dropdowns
@@ -96,6 +97,12 @@ export const InputSection: React.FC<InputSectionProps> = ({
   const [showHighlightMenu, setShowHighlightMenu] = useState(false);
   const [showFontMenu, setShowFontMenu] = useState(false);
   const [showSizeMenu, setShowSizeMenu] = useState(false);
+
+  // State for Resizing
+  const [editorWidth, setEditorWidth] = useState<number | null>(null);
+  const [resizingSide, setResizingSide] = useState<'left' | 'right' | null>(null);
+  const resizeStartX = useRef<number>(0);
+  const resizeStartWidth = useRef<number>(0);
   
   // Close menus when clicking outside
   useEffect(() => {
@@ -134,6 +141,58 @@ export const InputSection: React.FC<InputSectionProps> = ({
   useEffect(() => {
     document.execCommand('styleWithCSS', false, 'true');
   }, []);
+
+  // Resizing Logic
+  const handleMouseDownResize = (e: React.MouseEvent, side: 'left' | 'right') => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (containerRef.current) {
+        setResizingSide(side);
+        resizeStartX.current = e.clientX;
+        resizeStartWidth.current = containerRef.current.offsetWidth;
+    }
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizingSide) return;
+      
+      let delta = 0;
+      if (resizingSide === 'right') {
+         delta = e.clientX - resizeStartX.current;
+      } else {
+         delta = resizeStartX.current - e.clientX;
+      }
+
+      // Since the container is centered (mx-auto), expanding by X pixels 
+      // pushes both left and right sides out by X/2.
+      // To keep the mouse on the handle, we need to expand width by 2 * delta.
+      const newWidth = resizeStartWidth.current + (delta * 2);
+      
+      // Constraints (Min 400px, Max 8000px) - Greatly increased max width for large screens
+      if (newWidth >= 400 && newWidth <= 8000) { 
+          setEditorWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setResizingSide(null);
+    };
+
+    if (resizingSide) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [resizingSide]);
 
   const handleInput = () => {
     if (editorRef.current) {
@@ -227,7 +286,14 @@ export const InputSection: React.FC<InputSectionProps> = ({
   const isProcessing = status === AppStatus.PROCESSING;
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-full transition-all duration-300 overflow-visible relative">
+    <div 
+      ref={containerRef}
+      className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-full transition-all duration-300 overflow-visible relative mx-auto"
+      style={{ 
+        width: editorWidth ? `${editorWidth}px` : '100%',
+        maxWidth: '100%'
+      }}
+    >
       
       {/* Header: Title Input & Save Button */}
       <div className="px-6 pt-6 pb-2 flex items-start gap-4 justify-between">
@@ -558,6 +624,24 @@ export const InputSection: React.FC<InputSectionProps> = ({
             )}
           </button>
         </div>
+      </div>
+
+      {/* Left Resize Handle */}
+      <div
+        onMouseDown={(e) => handleMouseDownResize(e, 'left')}
+        className="absolute left-0 top-0 bottom-0 w-4 cursor-ew-resize flex items-center justify-center hover:bg-slate-50 transition-colors z-30 group"
+        style={{ transform: 'translateX(-50%)' }} 
+      >
+        <div className={`w-1 h-12 rounded-full bg-slate-200 group-hover:bg-blue-400 transition-colors ${resizingSide === 'left' ? 'bg-blue-500' : ''}`} />
+      </div>
+
+      {/* Right Resize Handle */}
+      <div
+        onMouseDown={(e) => handleMouseDownResize(e, 'right')}
+        className="absolute right-0 top-0 bottom-0 w-4 cursor-ew-resize flex items-center justify-center hover:bg-slate-50 transition-colors z-30 group"
+        style={{ transform: 'translateX(50%)' }} 
+      >
+        <div className={`w-1 h-12 rounded-full bg-slate-200 group-hover:bg-blue-400 transition-colors ${resizingSide === 'right' ? 'bg-blue-500' : ''}`} />
       </div>
     </div>
   );
