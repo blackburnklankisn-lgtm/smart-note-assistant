@@ -65,7 +65,7 @@ npm install -D tailwindcss postcss autoprefixer @tailwindcss/typography
     ```
     这会生成 `tailwind.config.js` 和 `postcss.config.js` 文件。
 
-    > **⚠️ 注意**：如果运行此命令后没有生成文件，或者报错，请**直接手动创建**这两个文件，内容如下：
+    > **⚠️ 常见问题**：如果运行此命令后没有生成文件，或者报错，请**直接手动创建**这两个文件，内容如下：
 
     *   **手动创建 `tailwind.config.js`**:
         ```javascript
@@ -144,4 +144,59 @@ npm install -D tailwindcss postcss autoprefixer @tailwindcss/typography
     *   **src/components/InputSection.tsx**: 复制 `components/InputSection.tsx` 的所有代码。
     *   **src/components/NoteDisplay.tsx**: 复制 `components/NoteDisplay.tsx` 的所有代码。
     *   **src/services/storageService.ts**: 复制 `services/storageService.ts` 的所有代码。
-    *   **src/services/geminiService.ts**:
+    *   **src/services/geminiService.ts**: 复制 `services/geminiService.ts` 的所有代码。
+
+    > **注意**：如果代码中有红色波浪线报错，通常是因为依赖包没安装好，请重新执行第三步。
+
+---
+
+### 第六步：配置 API Key 与 环境变量
+
+Vite 项目默认不支持直接使用 `process.env`，我们需要做一个简单的配置来适配代码。
+
+1.  **创建 `.env` 文件**：
+    在项目根目录（与 `package.json` 同级）新建一个名为 `.env` 的文件，填入你的 Key：
+    ```env
+    VITE_API_KEY=你的_Google_Gemini_API_Key_粘贴在这里
+    ```
+
+2.  **修改 `vite.config.ts`**：
+    打开根目录下的 `vite.config.ts`，修改为以下内容。这一步非常重要，它能让代码中的 `process.env.API_KEY` 正常工作。
+
+    ```typescript
+    import { defineConfig, loadEnv } from 'vite'
+    import react from '@vitejs/plugin-react'
+
+    // https://vitejs.dev/config/
+    export default defineConfig(({ mode }) => {
+      const env = loadEnv(mode, process.cwd(), '');
+      return {
+        plugins: [react()],
+        define: {
+          'process.env.API_KEY': JSON.stringify(env.VITE_API_KEY),
+        },
+      };
+    })
+    ```
+
+---
+
+### 第七步：启动项目 🚀
+
+1.  回到终端，运行启动命令：
+    ```bash
+    npm run dev
+    ```
+
+2.  终端会显示一个地址，通常是 `http://localhost:5173/`。
+3.  按住 `Ctrl` (或 Mac 上的 `Cmd`) 点击该链接，或在浏览器中直接访问。
+
+🎉 **恭喜！你现在可以在本地使用智能笔记助手了！**
+
+---
+
+### 常见问题排查
+
+*   **报错 `process is not defined`**: 请仔细检查**第六步**中 `vite.config.ts` 的配置是否完全一致。
+*   **无法生成笔记**: 请检查 `.env` 文件中的 API Key 是否有效，以及是否开启了网络代理（国内用户通常需要代理才能访问 Google API）。
+*   **样式混乱**: 请检查 `src/index.css` 是否正确引入了 `@tailwind` 指令。
