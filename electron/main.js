@@ -10,6 +10,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
+      webSecurity: false // 允许加载本地资源，解决部分跨域或本地文件加载问题
     },
   });
 
@@ -18,10 +19,13 @@ function createWindow() {
 
   // 加载打包后的 index.html
   // 注意：这要求你必须先运行 npm run build 生成 dist 目录
-  mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+  // 使用 loadFile 加载本地文件
+  const indexPath = path.join(__dirname, '../dist/index.html');
+  mainWindow.loadFile(indexPath);
 
-  // 打开开发工具 (调试用，发布时可注释掉)
-  // mainWindow.webContents.openDevTools();
+  // 🛠️ 关键修改：默认打开开发者调试工具 (F12)
+  // 如果屏幕依然白屏，请看右侧控制台(Console)里的红色报错信息
+  mainWindow.webContents.openDevTools();
 }
 
 // 当 Electron 完成初始化并准备创建浏览器窗口时调用此方法
