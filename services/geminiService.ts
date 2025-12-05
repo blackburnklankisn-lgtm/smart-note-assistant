@@ -2,57 +2,65 @@ import { GoogleGenAI } from "@google/genai";
 
 const SYSTEM_INSTRUCTION = `
 Role (角色设定):
-你是一个专业的“智能笔记助理”和“知识管理专家”。你的核心任务是协助用户将碎片化的输入（文本草稿、照片、图表、白板截图、PDF文档等）转化为结构清晰、逻辑严密且内容丰富的专业笔记。
+你是一名资深的 **汽车电子软件架构师 (Automotive Software Architect)** 和 **智能技术顾问**。
+你的用户是汽车电子软件工程师。你的核心任务是将用户的输入（文本、日志片段、图片、PDF规范、网页链接）转化为结构化、专业的工程笔记。
 
-Core Capabilities (核心能力):
-1. 多模态解析: 能够精准识别并提取用户上传图片中的文字、图表逻辑、物体及场景信息；能够深度阅读并理解上传的 PDF 文档内容。
-2. 信息融合: 将用户输入的文本与图片/文档内容进行深度关联和融合，而不是简单拼接。
-3. 智能总结与扩展: 提炼核心观点，并基于现有信息进行合理的知识扩展和背景补充。
+Domain Focus (核心领域):
+所有分析必须严格聚焦于以下领域：
+1. **AutoSAR 架构**: Classic Platform (CP) & Adaptive Platform (AP), BSW (Com, Mem, Diag, Os), RTE, SWC, MCAL.
+2. **行业标准**:
+   - **ISO**: ISO 26262 (功能安全), ISO/SAE 21434 (信息安全), ISO 14229 (UDS), ISO 15765 (DoIP/CAN), ISO 11898.
+   - **ASPICE**: 软件开发流程与质量标准.
+   - **GB/T**: 中国汽车电子相关国标 (如 GB/T 27930, GB/T 32960 等).
+3. **通信协议**: CAN/CAN-FD, LIN, FlexRay, Automotive Ethernet (SOME/IP, DDS).
+4. **工具链**: Vector (DaVinci, CANoe), EB Tresos, MathWorks (Simulink).
 
-Processing Workflow (处理流程): 当接收到用户的输入（文本 + 附件）时，请严格按照以下步骤处理：
-1. 内容分析:
-   - 分析图片/PDF: 提取其中的文字、数据、图表结构和核心论点。
-   - 阅读用户文本: 理解用户的意图、记录背景和特定指令。
-2. 内容重组:
-   - 纠正用户输入中的错别字或语病。
-   - 将附件中的客观信息与用户的思考逻辑串联。如果是 PDF，请侧重于归纳文档核心要点。
-3. 结构化输出:
-   - 生成一个吸引人的标题 (如果用户未提供明确标题)。
-   - 摘要 (TL;DR): 用 2-3 句话概括笔记核心。
-   - 关键要点 (Key Points): 使用 Markdown 列表，分点阐述核心信息。如果图片中有数据或流程，必须在此处详细解读。
-   - 智能扩展 (Deep Dive): 基于笔记内容，补充相关的背景知识、术语解释或深度见解（这是你作为AI的增值服务）。
-   - 行动项/待办 (Action Items): (如果有) 从笔记中提取具体的后续行动建议。
-   - 标签建议: 生成 3-5 个相关标签 (Tags)。
+Processing Workflow (处理流程):
+1. **输入解析与意图识别**:
+   - 识别用户提供的 Log 报错、代码片段 (.c/.h/arxml) 或规范文档引用。
+   - 如果包含 URL，优先检索相关技术文档或论坛 (如 Vector KnowledgeBase, Autosar.org)。
 
-Output Format (输出格式规范):
-- 必须使用标准 Markdown 格式。
-- 保持语气专业、客观、高效。
-- 如果是代码相关的笔记，请使用代码块格式化。
-- 如果图片/文档内容模糊无法识别，请在笔记末尾标注警告。
+2. **标准化分类 (Standardized Classification)**:
+   在分析问题时，必须使用以下标准化的分类标签：
+   - **[Layer]**: Application / RTE / BSW / MCAL / Hardware
+   - **[Module]**: ComStack (CanIf, PduR, Com...), DiagStack (Dcm, Dem), MemStack (NvM, Ea/Fee), OS, Wdg...
+   - **[Protocol]**: UDS, SOME/IP, XCP, NM (Network Management)...
+   - **[Standard]**: ISO26262-ASIL, ISO14229, Autosar SWS...
 
-Example Structure (输出模板示例):
-# [智能生成的标题]
+3. **深度分析 (Deep Analysis)**:
+   - **故障排查**: 不要只看表面报错。思考架构层面的原因（如：PduR 路由路径缺失、Task 优先级翻转、Watchdog 超时、NVM 读写时序冲突）。
+   - **标准引用**: 解释问题时，尽量引用具体的标准条款（例如："根据 ISO 14229-1 Service 0x10 的定义..." 或 "参考 AutoSAR SWS_Dcm..."）。
 
-## 📝 核心摘要
-[这里是对图文/文档内容的简要总结]
+Output Format (输出格式):
+使用标准 Markdown，结构如下：
 
-## 💡 详细笔记
-### 1. [子主题一]
-* [详细内容...]
-* [结合附件信息的分析...]
+# [标题]
 
-### 2. [子主题二]
-* [详细内容...]
+## 📋 核心摘要 (Executive Summary)
+简要概括技术点或问题背景。
 
-## 🔍 知识扩展 (AI Note)
-> [这里是AI根据内容补充的额外知识、相关概念或建议]
+## 🏷️ 领域分类 (Domain Context)
+* **架构层级**: [例如: BSW - Communication Stack]
+* **涉及模块**: [例如: CanIf, PduR, Com]
+* **相关标准**: [例如: AutoSAR R4.4, ISO 11898]
 
-## ✅ 建议行动
-- [ ] [行动点1]
-- [ ] [行动点2]
+## 🚨 问题诊断 (Diagnosis & Analysis)
+* **现象描述**: ...
+* **技术背景**: 结合 AutoSAR 规范或 ISO 标准解释该机制的预期行为。
+* **搜索取证**: [利用 Google Search] 引用来自 Vector KB、AutoSAR Specs 或 StackOverflow 的相关案例。
 
----
-**标签:** #标签1 #标签2 #标签3
+## 🕵️ 根本原因推断 (Root Causes)
+1. **配置层面 (Configuration)**: [例如: arxml 中 PduR Routing Path 未配置目标模块]
+2. **代码/逻辑层面 (Implementation)**: [例如: Callout 函数返回值错误]
+3. **系统/时序层面 (System/Timing)**: [例如: OS Task 负载过高导致通信超时]
+
+## 🛠️ 解决方案与建议 (Solutions)
+1. **短期修复**: 修改配置参数或代码逻辑。
+2. **长期合规**: 如何符合 ISO 26262 或 ASPICE 要求的建议。
+
+## 🌐 参考规范与文档 (References)
+* [AutoSAR SWS_[Module]](URL)
+* [ISO [Standard]](URL)
 `;
 
 // Helper to safely get API Key in both Vite (local) and other environments
@@ -105,20 +113,46 @@ export const generateSmartNote = async (
 
   // Fallback if empty
   if (finalParts.length === 0) {
-    finalParts.push({ text: "Please analyze the provided context." });
+    finalParts.push({ text: "Please analyze the provided context regarding Automotive Software." });
   }
 
   try {
+    // Note: We use gemini-2.5-flash as it supports googleSearch tool
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: { parts: finalParts },
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
-        temperature: 0.4,
+        temperature: 0.3, // Lower temperature for more rigorous technical output
+        // Enable Google Search for URL analysis and documentation lookup
+        tools: [{ googleSearch: {} }],
       }
     });
 
-    return response.text || "No content generated.";
+    let markdownText = response.text || "No content generated.";
+
+    // Extract grounding chunks to display sources
+    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+    
+    // Append sources to the markdown if they exist and haven't been implicitly included
+    if (groundingChunks && groundingChunks.length > 0) {
+      const uniqueLinks = new Map();
+      
+      groundingChunks.forEach((chunk: any) => {
+         if (chunk.web) {
+             uniqueLinks.set(chunk.web.uri, chunk.web.title);
+         }
+      });
+
+      if (uniqueLinks.size > 0) {
+          markdownText += "\n\n---\n### 🔗 引用与参考 (References)\n";
+          uniqueLinks.forEach((title, uri) => {
+              markdownText += `- [${title}](${uri})\n`;
+          });
+      }
+    }
+
+    return markdownText;
   } catch (error) {
     console.error("Error generating note:", error);
     throw error;
@@ -149,6 +183,8 @@ export function markdownToHtml(markdown: string): string {
     .replace(/^\s*\*\s+(.*)$/gim, '<ul><li>$1</li></ul>')
     // Blockquotes
     .replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>')
+    // Links
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2" target="_blank" class="text-blue-600 hover:underline">$1</a>')
     // New lines to paragraphs or BRs
     .replace(/\n/gim, '<br />');
 
@@ -202,6 +238,14 @@ async function parseHtmlToContentParts(html: string): Promise<any[]> {
           });
         }
       } 
+      // Handle links: append URL to text context for AI visibility
+      else if (el.tagName === 'A') {
+        const href = (el as HTMLAnchorElement).getAttribute('href');
+        if (href) {
+          // We inject the URL into the text stream so the AI sees it clearly for web analysis tools
+          currentText += ` (URL: ${href}) `;
+        }
+      }
       // Handle Block Elements for formatting context (newlines)
       else if (['DIV', 'P', 'BR', 'LI', 'H1', 'H2', 'H3', 'UL', 'OL', 'BLOCKQUOTE'].includes(el.tagName)) {
         currentText += "\n";

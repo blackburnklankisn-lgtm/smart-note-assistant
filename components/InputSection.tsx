@@ -3,7 +3,7 @@ import {
   X, Image as ImageIcon, Loader2, Sparkles, 
   Paperclip, File as FileIcon, Bold, Italic, Underline, 
   Heading1, Heading2, Save, Palette, Highlighter, ChevronDown,
-  Type, ALargeSmall
+  Type, ALargeSmall, Link as LinkIcon
 } from 'lucide-react';
 import { ImagePreview, AppStatus } from '../types';
 
@@ -223,6 +223,41 @@ export const InputSection: React.FC<InputSectionProps> = ({
     }
   };
 
+  const insertLink = () => {
+    // 1. Capture current selection before prompt blurs the editor
+    const selection = window.getSelection();
+    let range: Range | null = null;
+    if (selection && selection.rangeCount > 0) {
+      range = selection.getRangeAt(0);
+    }
+
+    // 2. Prompt user
+    const url = prompt("Please enter the URL:", "https://");
+    
+    if (url) {
+      // 3. Restore selection and focus
+      if (editorRef.current) {
+        editorRef.current.focus();
+        if (range && selection) {
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+      }
+
+      // 4. Insert logic
+      if (range && !range.collapsed) {
+        // If text was selected, make it a link
+        document.execCommand('createLink', false, url);
+      } else {
+        // If cursor was collapsed (no selection), insert the URL as a link
+        const linkHtml = `<a href="${url}" target="_blank" class="text-blue-600 hover:underline cursor-pointer">${url}</a>&nbsp;`;
+        document.execCommand('insertHTML', false, linkHtml);
+      }
+      
+      handleInput();
+    }
+  };
+
   const insertPdfPlaceholder = (file: File) => {
     if (editorRef.current) {
       editorRef.current.focus();
@@ -254,7 +289,7 @@ export const InputSection: React.FC<InputSectionProps> = ({
   };
 
   const handlePaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
-    // Safely cast to array to avoid iteration issues with DataTransferItemList in some TS configs
+    // 1. Handle Images
     const items = Array.from(e.clipboardData.items) as any[]; 
     const imageItem = items.find((item: any) => item.type.startsWith('image/'));
 
@@ -265,7 +300,27 @@ export const InputSection: React.FC<InputSectionProps> = ({
         const base64 = await fileToBase64(file);
         insertImageAtCursor(base64);
       }
+      return;
     }
+
+    // 2. Handle Text URL Auto-linking
+    const text = e.clipboardData.getData('text/plain');
+    if (text) {
+      // Regex to detect if the pasted content is purely a URL
+      const urlRegex = /^(https?:\/\/[^\s]+)$/i;
+      
+      if (urlRegex.test(text.trim())) {
+        e.preventDefault();
+        const url = text.trim();
+        // Insert as a styled clickable link
+        const linkHtml = `<a href="${url}" target="_blank" class="text-blue-600 hover:underline cursor-pointer">${url}</a>&nbsp;`;
+        document.execCommand('insertHTML', false, linkHtml);
+        handleInput();
+        return;
+      }
+    }
+    
+    // Default: allow normal text paste
   };
 
   const handleAttachmentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -504,7 +559,20 @@ export const InputSection: React.FC<InputSectionProps> = ({
         >
           <Heading2 size={18} />
         </button>
+        
         <div className="w-px h-5 bg-slate-200 mx-2" />
+        
+        <button
+          onMouseDown={(e) => {
+             e.preventDefault(); // Prevent focus loss on click
+             insertLink();
+          }}
+          className="p-1.5 rounded hover:bg-slate-100 text-slate-500 transition-colors"
+          title="Insert Link"
+        >
+          <LinkIcon size={18} />
+        </button>
+
         <button
           onClick={() => imageInsertRef.current?.click()}
           className="p-1.5 rounded hover:bg-slate-100 text-slate-500 transition-colors"
@@ -541,7 +609,7 @@ export const InputSection: React.FC<InputSectionProps> = ({
         {/* Placeholder text mechanism could be added here if editor is empty */}
         {text === "" && (
             <div className="absolute top-4 left-6 text-slate-400 pointer-events-none select-none">
-                Start typing your messy notes here...
+                Start typing your messy notes, paste images, or <b>paste URLs</b> for analysis...
             </div>
         )}
       </div>
