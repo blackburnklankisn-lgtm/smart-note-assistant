@@ -19,7 +19,9 @@ function createWindow() {
     },
   });
 
-  mainWindow.setMenuBarVisibility(false);
+  // 虽然我们隐藏了默认菜单栏，但为了让 Ctrl+C/V 等快捷键生效，
+  // 我们必须设置一个 Application Menu（即使不可见或者被隐藏）
+  // mainWindow.setMenuBarVisibility(false); // 这行代码通常只隐藏视觉，但有时会禁用快捷键
 
   // 加载打包后的页面
   const indexPath = path.join(__dirname, '../dist/index.html');
@@ -38,6 +40,43 @@ function createWindow() {
     }
     // 如果 isQuitting 为 true，则允许窗口正常关闭
   });
+}
+
+function createMenu() {
+  // 创建标准的应用程序菜单，确保快捷键可用
+  const template = [
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'delete' },
+        { type: 'separator' },
+        { role: 'selectAll' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    }
+  ];
+  
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
 }
 
 function createTray() {
@@ -78,6 +117,7 @@ function createTray() {
 }
 
 app.whenReady().then(() => {
+  createMenu(); // 初始化菜单
   createWindow();
   createTray();
 

@@ -373,7 +373,7 @@ export const InputSection: React.FC<InputSectionProps> = ({
       return;
     }
 
-    // 2. Handle Text URL Auto-linking
+    // 2. Handle Text URL Auto-linking OR Plain Text
     const text = e.clipboardData.getData('text/plain');
     if (text) {
       // Regex to detect if the pasted content is purely a URL
@@ -388,9 +388,15 @@ export const InputSection: React.FC<InputSectionProps> = ({
         handleInput();
         return;
       }
+      
+      // Fallback: Explicitly handle plain text to ensure it pastes correctly
+      // This is crucial if default browser events are blocked or inconsistent in Electron
+      e.preventDefault();
+      document.execCommand('insertText', false, text);
+      handleInput();
     }
     
-    // Default: allow normal text paste
+    // Default behavior for other types if any, though text logic above usually catches strings
   };
 
   const handleAttachmentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
