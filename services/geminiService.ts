@@ -18,7 +18,7 @@ Domain Focus (核心领域):
 Processing Workflow (处理流程):
 1. **输入解析与意图识别**:
    - 识别用户提供的 Log 报错、代码片段 (.c/.h/arxml) 或规范文档引用。
-   - 如果包含 URL，优先检索相关技术文档或论坛 (如 Vector KnowledgeBase, Autosar.org)。
+   - **URL 解析**: 输入文本中可能包含标记为 \`(Link URL: https://...)\` 的网页链接。请务必使用工具访问这些链接，提取内容进行辅助分析。
 
 2. **标准化分类 (Standardized Classification)**:
    在分析问题时，必须使用以下标准化的分类标签：
@@ -241,9 +241,10 @@ async function parseHtmlToContentParts(html: string): Promise<any[]> {
       // Handle links: append URL to text context for AI visibility
       else if (el.tagName === 'A') {
         const href = (el as HTMLAnchorElement).getAttribute('href');
-        if (href) {
-          // We inject the URL into the text stream so the AI sees it clearly for web analysis tools
-          currentText += ` (URL: ${href}) `;
+        // Filter only valid http/https links to avoid javascript: or internal anchors cluttering context
+        if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+          // We inject the URL into the text stream with a clear label so the AI sees it for web analysis
+          currentText += ` (Link URL: ${href}) `;
         }
       }
       // Handle Block Elements for formatting context (newlines)

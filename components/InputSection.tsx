@@ -12,6 +12,7 @@ interface InputSectionProps {
   text: string; // This will now contain HTML
   previews: ImagePreview[]; // These are for PDF attachments mainly
   status: AppStatus;
+  searchQuery?: string; // New prop for search highlighting
   onChangeTitle: (title: string) => void;
   onChangeText: (html: string) => void;
   onAddFiles: (files: File[]) => void;
@@ -79,6 +80,7 @@ export const InputSection: React.FC<InputSectionProps> = ({
   text, 
   previews, 
   status, 
+  searchQuery,
   onChangeTitle,
   onChangeText,
   onAddFiles,
@@ -103,6 +105,30 @@ export const InputSection: React.FC<InputSectionProps> = ({
   const [resizingSide, setResizingSide] = useState<'left' | 'right' | null>(null);
   const resizeStartX = useRef<number>(0);
   const resizeStartWidth = useRef<number>(0);
+
+  // Helper to remove temporary highlight tags before saving/processing
+  const removeHighlights = (html: string) => {
+    return html.replace(/<span class="search-highlight [^"]*">(.*?)<\/span>/g, '$1');
+  };
+
+  // Helper to add highlights
+  const applyHighlights = (html: string, query: string) => {
+    if (!query || query.trim().length < 2) return html;
+    
+    // Clean existing first
+    let cleanHtml = removeHighlights(html);
+    const keywords = query.split(/\s+/).filter(k => k.length > 0);
+    
+    keywords.forEach(keyword => {
+       // Escape regex special characters in keyword
+       const safeKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+       // Regex to match text content but avoid HTML tags and attributes
+       const regex = new RegExp(`(?![^<]*>)(${safeKeyword})`, 'gi');
+       cleanHtml = cleanHtml.replace(regex, '<span class="search-highlight bg-yellow-300 text-slate-900 rounded-sm">$1</span>');
+    });
+    
+    return cleanHtml;
+  };
   
   // Close menus when clicking outside
   useEffect(() => {
@@ -122,20 +148,60 @@ export const InputSection: React.FC<InputSectionProps> = ({
   // Sync initial content on mount
   useEffect(() => {
     if (editorRef.current) {
-       editorRef.current.innerHTML = text;
+       // Apply highlights if there's a search query on mount
+       const content = searchQuery ? applyHighlights(text, searchQuery) : text;
+       editorRef.current.innerHTML = content;
+       
+       // Scroll to first highlight if active
+       if (searchQuery) {
+         setTimeout(() => {
+            const firstHighlight = editorRef.current?.querySelector('.search-highlight');
+            if (firstHighlight) {
+                firstHighlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+         }, 100);
+       }
     }
   }, []);
 
-  // Sync if text changes significantly (e.g. AI generation update)
+  // Sync if text changes significantly (e.g. AI generation update) or search query changes
   useEffect(() => {
-    if (editorRef.current && text !== editorRef.current.innerHTML) {
-       // Only update if the length is significantly different to avoid cursor jumps while typing
-       // or if it's a generated update (usually large)
-       if (Math.abs(editorRef.current.innerHTML.length - text.length) > 10) {
-          editorRef.current.innerHTML = text;
-       }
+    if (editorRef.current) {
+        // Current editor HTML (could contain user edits or previous highlights)
+        const currentEditorHtml = editorRef.current.innerHTML;
+        // Cleaned current editor HTML (what the data actually is)
+        const currentClean = removeHighlights(currentEditorHtml);
+        
+        // Incoming text cleaned (in case it had highlights saved by mistake, though we prevent that)
+        const incomingClean = removeHighlights(text);
+
+        // Update if:
+        // 1. Underlying text changed from outside (e.g. AI generation, switching notes)
+        // 2. Search query changed (need to re-render highlights)
+        // 3. BUT try to avoid resetting cursor if user is just typing (handled by onInput)
+        
+        const isSearchUpdate = searchQuery !== undefined;
+        const textChanged = Math.abs(currentClean.length - incomingClean.length) > 10 || currentClean !== incomingClean;
+
+        if (textChanged || isSearchUpdate) {
+            const newContent = searchQuery ? applyHighlights(incomingClean, searchQuery) : incomingClean;
+            
+            // Only update DOM if the resulting HTML is actually different to prevent cursor jumps
+            if (editorRef.current.innerHTML !== newContent) {
+                 editorRef.current.innerHTML = newContent;
+                 
+                 if (searchQuery) {
+                    setTimeout(() => {
+                        const firstHighlight = editorRef.current?.querySelector('.search-highlight');
+                        if (firstHighlight) {
+                            firstHighlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    }, 100);
+                 }
+            }
+        }
     }
-  }, [text]);
+  }, [text, searchQuery]);
 
   // Enable styleWithCSS for better font handling
   useEffect(() => {
@@ -196,7 +262,11 @@ export const InputSection: React.FC<InputSectionProps> = ({
 
   const handleInput = () => {
     if (editorRef.current) {
-      onChangeText(editorRef.current.innerHTML);
+      // CRITICAL: We must strip the temporary highlight spans before saving to state
+      // otherwise search highlights become permanent parts of the note.
+      const rawHtml = editorRef.current.innerHTML;
+      const cleanHtml = removeHighlights(rawHtml);
+      onChangeText(cleanHtml);
       checkFormats();
     }
   };

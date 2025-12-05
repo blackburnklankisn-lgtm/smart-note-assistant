@@ -5,7 +5,8 @@ import { AppStatus, NoteSession, ImagePreview } from './types';
 import { loadNotesFromStorage, saveNotesToStorage } from './services/storageService';
 import { 
   BrainCircuit, Plus, FileText, ChevronRight, Menu, X, MessageSquarePlus,
-  Loader2, CheckCircle2, AlertCircle, Trash2, AlertTriangle, Search, GripVertical
+  Loader2, CheckCircle2, AlertCircle, Trash2, AlertTriangle, Search, GripVertical,
+  Copy
 } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -111,14 +112,24 @@ const App: React.FC = () => {
     };
   }, [isResizing, resize, stopResizing]);
 
-  // Filter notes based on search query
+  // Filter notes based on search query (Multi-keyword support)
   const filteredNotes = notes.filter(note => {
     const query = searchQuery.toLowerCase().trim();
     if (!query) return true;
     
-    const titleMatch = (note.title || '').toLowerCase().includes(query);
-    const contentMatch = (note.inputText || '').toLowerCase().includes(query);
-    return titleMatch || contentMatch;
+    // Split query by spaces to support multi-keyword matching (e.g. "AutoSAR Error")
+    const keywords = query.split(/\s+/).filter(k => k.length > 0);
+    
+    const title = (note.title || '').toLowerCase();
+    const content = (note.inputText || '').toLowerCase();
+    const generated = (note.result?.markdown || '').toLowerCase();
+    
+    // Note must contain ALL keywords in either title, content, or generated result
+    return keywords.every(keyword => 
+      title.includes(keyword) || 
+      content.includes(keyword) || 
+      generated.includes(keyword)
+    );
   });
 
   const updateActiveNote = (updates: Partial<NoteSession>) => {
@@ -136,6 +147,31 @@ const App: React.FC = () => {
       setIsSidebarOpen(false);
     }
     // Immediate save
+    saveNotesToStorage([newNote, ...notes]);
+  };
+
+  const handleDuplicateNote = (e: React.MouseEvent, noteId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const noteToCopy = notes.find(n => n.id === noteId);
+    if (!noteToCopy) return;
+
+    const newNote: NoteSession = {
+      ...noteToCopy,
+      id: generateId(),
+      title: noteToCopy.title ? `${noteToCopy.title} (Copy)` : 'Untitled Copy',
+      createdAt: Date.now(),
+      status: AppStatus.IDLE,
+      error: null,
+      // Create new object URLs for attachments to avoid revocation issues
+      attachments: noteToCopy.attachments.map(att => ({
+        ...att,
+        url: URL.createObjectURL(att.file)
+      }))
+    };
+    
+    setNotes(prev => [newNote, ...prev]);
     saveNotesToStorage([newNote, ...notes]);
   };
 
@@ -350,7 +386,7 @@ const App: React.FC = () => {
                 }`}
               >
                 <FileText size={18} className={`mt-0.5 flex-shrink-0 ${activeNoteId === note.id ? 'text-blue-500' : 'text-slate-400'}`} />
-                <div className="flex-1 min-w-0 pr-6">
+                <div className="flex-1 min-w-0 pr-14">
                   <div className={`font-semibold truncate ${activeNoteId === note.id ? 'text-slate-900' : 'text-slate-700'}`}>
                     {note.title || "Untitled Note"}
                   </div>
@@ -359,20 +395,27 @@ const App: React.FC = () => {
                   </div>
                 </div>
                 
-                {/* Delete Button */}
-                <button
-                  onClick={(e) => requestDeleteNote(e, note.id)}
-                  className={`
-                      absolute right-2 top-1/2 -translate-y-1/2 p-2 
-                      rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 
-                      transition-all z-20
-                      opacity-0 group-hover:opacity-100 focus:opacity-100
-                      ${activeNoteId === note.id ? 'opacity-100' : ''}
-                  `}
-                  title="Delete Note"
-                >
-                  <Trash2 size={16} />
-                </button>
+                {/* Quick Actions (Duplicate / Delete) */}
+                <div className={`
+                    absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1
+                    transition-opacity duration-200 z-20
+                    ${activeNoteId === note.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
+                `}>
+                  <button
+                    onClick={(e) => handleDuplicateNote(e, note.id)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors bg-white/50 backdrop-blur-sm"
+                    title="Duplicate Note"
+                  >
+                    <Copy size={14} />
+                  </button>
+                  <button
+                    onClick={(e) => requestDeleteNote(e, note.id)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors bg-white/50 backdrop-blur-sm"
+                    title="Delete Note"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -444,6 +487,7 @@ const App: React.FC = () => {
                  text={activeNote.inputText}
                  previews={activeNote.attachments}
                  status={activeNote.status}
+                 searchQuery={searchQuery} // Pass search query for highlighting
                  onChangeTitle={(t) => updateActiveNote({ title: t })}
                  onChangeText={(t) => updateActiveNote({ inputText: t })}
                  onAddFiles={handleAddFiles}
