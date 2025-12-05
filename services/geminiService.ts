@@ -55,15 +55,32 @@ Example Structure (输出模板示例):
 **标签:** #标签1 #标签2 #标签3
 `;
 
+// Helper to safely get API Key in both Vite (local) and other environments
+const getApiKey = (): string | undefined => {
+  // Check for Vite environment variable first (import.meta.env)
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_KEY) {
+    // @ts-ignore
+    return import.meta.env.VITE_API_KEY;
+  }
+  // Fallback to process.env (Standard Node/Webpack)
+  if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+    return process.env.API_KEY;
+  }
+  return undefined;
+};
+
 export const generateSmartNote = async (
   htmlContent: string,
   attachments: File[]
 ): Promise<string> => {
-  if (!process.env.API_KEY) {
-    throw new Error("API Key is missing. Please check your environment configuration.");
+  const apiKey = getApiKey();
+  
+  if (!apiKey) {
+    throw new Error("API Key is missing. Please check your .env file or environment configuration.");
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey });
   
   // 1. Parse HTML content into interleaved text and image parts
   const contentParts = await parseHtmlToContentParts(htmlContent);

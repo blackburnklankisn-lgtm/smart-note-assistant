@@ -1,213 +1,107 @@
 # 智能笔记助手 (Smart Note Assistant)
 
-这是一个基于 Google Gemini 2.5 模型的智能知识管理工具。它能够将碎片化的文本、图片和 PDF 文档转化为结构清晰、逻辑严密的专业笔记。
+这是一个基于 Google Gemini 2.5 模型的智能知识管理工具。
 
 ---
 
-## 🛠️ 本地部署安装指南 (保姆级教程)
+## 📦 如何打包成 .exe 桌面软件 (推荐)
 
-本教程将指导您如何在本地 Windows/Mac 电脑上，使用 **Vite + React + TypeScript** 搭建并运行本项目。
+如果您觉得每次运行命令太麻烦，可以将本项目打包成一个独立的 `.exe` 安装包。
 
-### 第一步：环境准备
+### 1. 修改 `package.json`
 
-1.  **安装 Node.js**:
-    *   访问 [Node.js 官网](https://nodejs.org/) 下载并安装 **LTS 版本** (推荐 v18 或更高)。
-    *   安装完成后，打开终端 (Terminal 或 CMD)，输入 `node -v` 检查是否安装成功。
+打开根目录下的 `package.json` 文件，**小心地**将其内容替换为以下内容（这会添加打包所需的命令和依赖配置）：
 
-2.  **准备代码编辑器**:
-    *   推荐使用 [VS Code](https://code.visualstudio.com/)。
+```json
+{
+  "name": "smart-note-assistant",
+  "private": true,
+  "version": "1.0.0",
+  "main": "electron/main.js",
+  "description": "Smart Note Assistant Desktop App",
+  "author": "Your Name",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.smartnote.app",
+    "productName": "Smart Note AI",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icon.ico" 
+    }
+  },
+  "dependencies": {
+    "@google/genai": "^1.30.0",
+    "lucide-react": "^0.344.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-markdown": "^9.0.1",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.66",
+    "@types/react-dom": "^18.2.22",
+    "@types/uuid": "^9.0.8",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.18",
+    "electron": "^29.1.0",
+    "electron-builder": "^24.13.3",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.2.2",
+    "vite": "^5.2.0"
+  }
+}
+```
 
-3.  **获取 Google Gemini API Key**:
-    *   访问 [Google AI Studio](https://aistudiocdn.com/google-ai-studio) 获取免费的 API Key。
+### 2. 安装打包工具
 
----
-
-### 第二步：创建项目基础框架
-
-在电脑上选择一个文件夹，打开终端，依次执行以下命令：
+在终端运行一次以下命令（可能需要几分钟）：
 
 ```bash
-# 1. 创建一个名为 smart-note 的新项目 (选择 React 和 TypeScript)
-npm create vite@latest smart-note -- --template react-ts
-
-# 2. 进入项目目录
-cd smart-note
-
-# 3. 安装基础依赖
 npm install
 ```
 
----
+### 3. 生成 .exe 安装包
 
-### 第三步：安装项目所需插件 (关键步骤)
-
-**注意**：为了防止版本不兼容报错，请务必使用下方的命令安装 **Tailwind CSS v3** 版本。
-
-复制以下命令在终端中运行：
+运行以下命令开始打包：
 
 ```bash
-# 安装核心功能库
-npm install lucide-react @google/genai react-markdown uuid
-
-# 安装 TypeScript 类型定义
-npm install -D @types/uuid @types/node
-
-# ⚠️ 安装样式库 (请严格复制此行，强制指定 tailwindcss@3)
-npm install -D tailwindcss@3 postcss autoprefixer @tailwindcss/typography
+npm run dist
 ```
 
----
+### 4. 获取安装包
 
-### 第四步：配置样式 (Tailwind CSS)
+等待命令运行完成。
+打开项目文件夹下的 `release` 文件夹。
+您会看到一个类似于 `Smart Note AI Setup 1.0.0.exe` 的文件。
 
-1.  **初始化配置**：
-    在终端运行：
-    ```bash
-    npx tailwindcss init -p
-    ```
-    这会生成 `tailwind.config.js` 和 `postcss.config.js` 文件。
-
-    > **⚠️ 常见问题**：如果运行此命令后没有生成文件，或者报错，请**直接手动创建**这两个文件，内容如下：
-
-    *   **手动创建 `tailwind.config.js`**:
-        ```javascript
-        /** @type {import('tailwindcss').Config} */
-        export default {
-          content: [
-            "./index.html",
-            "./src/**/*.{js,ts,jsx,tsx}",
-          ],
-          theme: {
-            extend: {
-              fontFamily: {
-                sans: ['Inter', 'sans-serif'],
-                mono: ['JetBrains Mono', 'monospace'],
-              },
-            },
-          },
-          plugins: [
-            require('@tailwindcss/typography'),
-          ],
-        }
-        ```
-
-    *   **手动创建 `postcss.config.js`**:
-        ```javascript
-        export default {
-          plugins: {
-            tailwindcss: {},
-            autoprefixer: {},
-          },
-        }
-        ```
-
-2.  **引入样式**：
-    打开 `src/index.css`，**清空原有内容**，填入以下代码：
-
-    ```css
-    @tailwind base;
-    @tailwind components;
-    @tailwind utilities;
-
-    /* 自定义滚动条样式 */
-    ::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
-    }
-    ::-webkit-scrollbar-track {
-      background: #f1f5f9; 
-    }
-    ::-webkit-scrollbar-thumb {
-      background: #cbd5e1; 
-      border-radius: 4px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: #94a3b8; 
-    }
-    ```
+**🎉 恭喜！双击这个 exe 文件即可安装使用，以后再也不用打开终端了！**
 
 ---
 
-### 第五步：迁移源代码 (最关键的一步)
+## 🛠️ 本地开发运行 (旧方式)
 
-请按照以下结构将本项目提供的代码复制到 `src` 文件夹中。
-
-1.  **清理默认文件**：
-    *   删除 `src/App.css` (如果存在)。
-    *   你可以保留 `src/main.tsx` (Vite 默认入口)，不要使用本项目提供的 `index.tsx`。
-
-2.  **创建文件结构**：
-    在 `src` 目录下新建 `components` 和 `services` 文件夹。
-
-3.  **复制文件内容**：
-
-    *   **src/types.ts**: 复制 `types.ts` 的所有代码。
-    *   **src/App.tsx**: 复制 `App.tsx` 的所有代码。
-    *   **src/components/InputSection.tsx**: 复制 `components/InputSection.tsx` 的所有代码。
-    *   **src/components/NoteDisplay.tsx**: 复制 `components/NoteDisplay.tsx` 的所有代码。
-    *   **src/services/storageService.ts**: 复制 `services/storageService.ts` 的所有代码。
-    *   **src/services/geminiService.ts**: 复制 `services/geminiService.ts` 的所有代码。
-
-    > **注意**：如果代码中有红色波浪线报错，通常是因为依赖包没安装好，请重新执行第三步。
+1.  **环境准备**: 安装 Node.js v18+。
+2.  **安装依赖**: `npm install`
+3.  **配置 API Key**: 在根目录新建 `.env` 文件，填入 `VITE_API_KEY=你的GeminiKey`。
+4.  **启动**: `npm run dev`
 
 ---
 
-### 第六步：配置 API Key 与 环境变量
+## ⚠️ 常见问题
 
-Vite 项目默认不支持直接使用 `process.env`，我们需要做一个简单的配置来适配代码。
-
-1.  **创建 `.env` 文件**：
-    在项目根目录（与 `package.json` 同级）新建一个名为 `.env` 的文件，填入你的 Key：
-    ```env
-    VITE_API_KEY=你的_Google_Gemini_API_Key_粘贴在这里
-    ```
-
-2.  **修改 `vite.config.ts`**：
-    打开根目录下的 `vite.config.ts`，修改为以下内容。这一步非常重要，它能让代码中的 `process.env.API_KEY` 正常工作。
-
-    ```typescript
-    import { defineConfig, loadEnv } from 'vite'
-    import react from '@vitejs/plugin-react'
-
-    // https://vitejs.dev/config/
-    export default defineConfig(({ mode }) => {
-      const env = loadEnv(mode, process.cwd(), '');
-      return {
-        plugins: [react()],
-        define: {
-          'process.env.API_KEY': JSON.stringify(env.VITE_API_KEY),
-        },
-      };
-    })
-    ```
-
----
-
-### 第七步：启动项目 🚀
-
-1.  回到终端，运行启动命令：
-    ```bash
-    npm run dev
-    ```
-
-2.  终端会显示一个地址，通常是 `http://localhost:5173/`。
-3.  按住 `Ctrl` (或 Mac 上的 `Cmd`) 点击该链接，或在浏览器中直接访问。
-
-🎉 **恭喜！你现在可以在本地使用智能笔记助手了！**
-
----
-
-### 常见问题排查
-
-*   **报错 `[plugin:vite:css] [postcss] ... install @tailwindcss/postcss`**：
-    *   **原因**：这是因为你不小心安装了 Tailwind CSS v4 版本，而配置是针对 v3 版本的。
-    *   **解决**：在终端运行以下命令，强制重新安装 v3 版本：
-        ```bash
-        npm uninstall tailwindcss
-        npm install -D tailwindcss@3 postcss autoprefixer
-        ```
-        然后重新运行 `npm run dev` 即可。
-
-*   **报错 `process is not defined`**: 请仔细检查**第六步**中 `vite.config.ts` 的配置是否完全一致。
-*   **无法生成笔记**: 请检查 `.env` 文件中的 API Key 是否有效，以及是否开启了网络代理（国内用户通常需要代理才能访问 Google API）。
-*   **样式混乱**: 请检查 `src/index.css` 是否正确引入了 `@tailwind` 指令。
+*   **白屏问题**: 如果打包后打开软件是白屏，请确保项目根目录下有我提供的 `vite.config.ts` 文件，并且里面配置了 `base: './'`。
+*   **API Key 报错**: 打包成桌面软件后，`.env` 文件可能无法自动读取。**建议您在第一次打开软件时，在代码里写死 Key 或者后续我为您增加一个“设置”页面来手动输入 Key。** (目前代码已做兼容，如果打包后报错，请检查 API Key 是否有效)。
