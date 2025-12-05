@@ -6,7 +6,7 @@ import { loadNotesFromStorage, saveNotesToStorage } from './services/storageServ
 import { 
   BrainCircuit, Plus, FileText, ChevronRight, Menu, X, MessageSquarePlus,
   Loader2, CheckCircle2, AlertCircle, Trash2, AlertTriangle, Search, GripVertical,
-  Copy
+  Copy, Settings
 } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -35,6 +35,10 @@ const App: React.FC = () => {
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   
+  // Settings State
+  const [showSettings, setShowSettings] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+
   // Resizable Sidebar State
   const [sidebarWidth, setSidebarWidth] = useState(288); // Default 288px (w-72)
   const [isResizing, setIsResizing] = useState(false);
@@ -42,6 +46,12 @@ const App: React.FC = () => {
 
   // Ensure activeNote is always valid, fallback to first note if ID not found
   const activeNote = notes.find(n => n.id === activeNoteId) || notes[0];
+
+  // Load API Key on mount
+  useEffect(() => {
+    const storedKey = localStorage.getItem('gemini_api_key');
+    if (storedKey) setApiKeyInput(storedKey);
+  }, []);
 
   // Auto-save effect: Triggers 2 seconds after the last change to 'notes'
   useEffect(() => {
@@ -228,6 +238,11 @@ const App: React.FC = () => {
     setTimeout(() => {
       setSaveStatus(success ? 'saved' : 'error');
     }, 500);
+  };
+  
+  const handleSaveSettings = () => {
+    localStorage.setItem('gemini_api_key', apiKeyInput.trim());
+    setShowSettings(false);
   };
 
   const handleSwitchNote = (id: string) => {
@@ -420,8 +435,17 @@ const App: React.FC = () => {
             ))}
           </div>
 
-          <div className="p-4 border-t border-slate-100 bg-slate-50/50 text-xs text-slate-400 text-center font-medium flex flex-col gap-2">
-            <div className={`flex items-center justify-center gap-1.5 transition-colors ${saveStatus === 'error' ? 'text-red-500' : 'text-slate-400'}`}>
+          {/* Footer Area with Settings */}
+          <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex flex-col gap-3">
+            <button 
+              onClick={() => setShowSettings(true)}
+              className="w-full py-2 px-3 bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-300 rounded-lg font-medium flex items-center justify-center gap-2 transition-all text-xs shadow-sm"
+            >
+              <Settings size={14} />
+              Settings (API Key)
+            </button>
+
+            <div className={`flex items-center justify-center gap-1.5 transition-colors text-xs font-medium ${saveStatus === 'error' ? 'text-red-500' : 'text-slate-400'}`}>
               {saveStatus === 'saving' && <Loader2 size={12} className="animate-spin" />}
               {saveStatus === 'saved' && <CheckCircle2 size={12} />}
               {saveStatus === 'error' && <AlertCircle size={12} />}
@@ -430,7 +454,7 @@ const App: React.FC = () => {
                  saveStatus === 'saved' ? 'Synced to storage' : 'Save failed'}
               </span>
             </div>
-            <div>Powered by Gemini 2.5</div>
+            <div className="text-[10px] text-slate-300 text-center">Powered by Gemini 2.5</div>
           </div>
         </aside>
 
@@ -539,6 +563,49 @@ const App: React.FC = () => {
                  </div>
               </div>
            </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95">
+             <h3 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+               <Settings className="text-blue-600" />
+               Settings
+             </h3>
+             
+             <div className="mb-4">
+               <label className="block text-sm font-medium text-slate-700 mb-1">Google Gemini API Key</label>
+               <input 
+                 type="password" 
+                 value={apiKeyInput}
+                 onChange={(e) => setApiKeyInput(e.target.value)}
+                 placeholder="AIzaSy..."
+                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+               />
+               <p className="text-xs text-slate-500 mt-2">
+                 The API Key is stored locally in your browser/app storage.
+                 <br/>
+                 Get a key from <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-blue-600 hover:underline">Google AI Studio</a>.
+               </p>
+             </div>
+
+             <div className="flex justify-end gap-3">
+               <button 
+                 onClick={() => setShowSettings(false)}
+                 className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition-colors"
+               >
+                 Cancel
+               </button>
+               <button 
+                 onClick={handleSaveSettings}
+                 className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg font-medium transition-colors shadow-sm"
+               >
+                 Save Configuration
+               </button>
+             </div>
+          </div>
         </div>
       )}
     </div>

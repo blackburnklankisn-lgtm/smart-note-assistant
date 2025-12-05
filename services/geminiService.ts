@@ -64,14 +64,23 @@ Output Format (输出格式):
 `;
 
 // Helper to safely get API Key in both Vite (local) and other environments
-const getApiKey = (): string | undefined => {
-  // Check for Vite environment variable first (import.meta.env)
+export const getApiKey = (): string | undefined => {
+  // 1. Check LocalStorage (User configuration via UI) - Priority #1 for Desktop App
+  if (typeof window !== 'undefined') {
+    const storedKey = localStorage.getItem('gemini_api_key');
+    if (storedKey && storedKey.trim() !== '') {
+      return storedKey.trim();
+    }
+  }
+
+  // 2. Check for Vite environment variable (import.meta.env) - Priority #2 for Dev
   // @ts-ignore
   if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_KEY) {
     // @ts-ignore
     return import.meta.env.VITE_API_KEY;
   }
-  // Fallback to process.env (Standard Node/Webpack)
+  
+  // 3. Fallback to process.env (Standard Node/Webpack)
   if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
     return process.env.API_KEY;
   }
@@ -85,7 +94,7 @@ export const generateSmartNote = async (
   const apiKey = getApiKey();
   
   if (!apiKey) {
-    throw new Error("API Key is missing. Please check your .env file or environment configuration.");
+    throw new Error("API Key is missing. Please configure it in Settings.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
