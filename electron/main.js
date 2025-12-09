@@ -1,17 +1,22 @@
 const { app, BrowserWindow, Tray, Menu } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 let mainWindow = null;
 let tray = null;
 let isQuitting = false; // 标记是否是通过托盘菜单点击了“退出”
 
 function createWindow() {
+  // 检查图标是否存在，防止报错
+  const iconPath = path.join(__dirname, 'icon.png');
+  const hasIcon = fs.existsSync(iconPath);
+
   // 1. 创建浏览器窗口
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    // 确保 electron 目录下有 icon.png，否则托盘图标可能不显示或报错
-    icon: path.join(__dirname, 'icon.png'), 
+    // 仅当图标存在时才设置，否则使用默认图标
+    icon: hasIcon ? iconPath : undefined, 
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -19,18 +24,17 @@ function createWindow() {
     },
   });
 
-  // 虽然我们隐藏了默认菜单栏，但为了让 Ctrl+C/V 等快捷键生效，
-  // 我们必须设置一个 Application Menu（即使不可见或者被隐藏）
-  // mainWindow.setMenuBarVisibility(false); // 这行代码通常只隐藏视觉，但有时会禁用快捷键
-
   // 加载打包后的页面
+  // 注意：npm run build 会生成 dist 文件夹，所以这里指向 ../dist/index.html
   const indexPath = path.join(__dirname, '../dist/index.html');
-  mainWindow.loadFile(indexPath);
+  
+  // 开发环境下（如果是 electron . 直接运行且没有 build），可以考虑加载 localhost
+  // 但为了简化逻辑，这里默认加载文件。如果文件不存在，说明没 build。
+  mainWindow.loadFile(indexPath).catch(e => {
+    console.error("Failed to load index.html. Did you run 'npm run build'?", e);
+  });
 
-  // 2. 注释掉开发者工具 (按您的要求)
-  // mainWindow.webContents.openDevTools();
-
-  // 3. 拦截关闭事件 (核心逻辑)
+  // 3. 拦截关闭事件 (核心逻辑 - 最小化到托盘)
   mainWindow.on('close', (event) => {
     // 如果不是用户主动点击托盘的“退出”，则仅仅隐藏窗口
     if (!isQuitting) {
@@ -41,8 +45,7 @@ function createWindow() {
     // 如果 isQuitting 为 true，则允许窗口正常关闭
   });
 
-  // 4. [新增] 右键菜单支持 (Context Menu)
-  // Electron 默认没有右键菜单，需要手动实现
+  // 4. 右键菜单支持 (Context Menu)
   mainWindow.webContents.on('context-menu', (event, params) => {
     const menuTemplate = [
       { role: 'undo' },
@@ -101,40 +104,51 @@ function createMenu() {
 }
 
 function createTray() {
-  // 图标路径：请确保您的 electron 文件夹里有一个名为 icon.png 的文件
   const iconPath = path.join(__dirname, 'icon.png');
+  const hasIcon = fs.existsSync(iconPath);
   
+  // 如果没有图标，托盘功能可能无法正常创建，或者显示为空白
+  // 建议在 electron 目录下放一个 icon.png
+  if (!hasIcon) {
+    console.log("No icon.png found in electron folder. Tray might look generic.");
+  }
+
   // 创建系统托盘
-  tray = new Tray(iconPath);
-  
-  // 设置鼠标悬停时的提示文字
-  tray.setToolTip('Smart Note AI');
+  // 注意：如果没有图标文件，Tray 初始化可能会失败，这里加个简单的容错
+  try {
+    tray = new Tray(hasIcon ? iconPath : ''); // 如果没图标，传空路径可能会导致某些系统不显示
+    
+    // 设置鼠标悬停时的提示文字
+    tray.setToolTip('Smart Note AI');
 
-  // 创建托盘右键菜单
-  const contextMenu = Menu.buildFromTemplate([
-    { 
-      label: '显示主界面 (Show App)', 
-      click: () => mainWindow.show() 
-    },
-    { 
-      label: '退出 (Quit)', 
-      click: () => {
-        isQuitting = true; // 标记为真退出
-        app.quit();        // 执行退出
-      } 
-    }
-  ]);
+    // 创建托盘右键菜单
+    const contextMenu = Menu.buildFromTemplate([
+      { 
+        label: '显示主界面 (Show App)', 
+        click: () => mainWindow.show() 
+      },
+      { 
+        label: '退出 (Quit)', 
+        click: () => {
+          isQuitting = true; // 标记为真退出
+          app.quit();        // 执行退出
+        } 
+      }
+    ]);
 
-  tray.setContextMenu(contextMenu);
+    tray.setContextMenu(contextMenu);
 
-  // 点击托盘小图标时，也可以显示窗口
-  tray.on('click', () => {
-    if (mainWindow.isVisible()) {
-      mainWindow.hide();
-    } else {
-      mainWindow.show();
-    }
-  });
+    // 点击托盘小图标时，也可以显示窗口
+    tray.on('click', () => {
+      if (mainWindow.isVisible()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.show();
+      }
+    });
+  } catch (e) {
+    console.warn("Failed to create Tray icon. Please ensure 'electron/icon.png' exists.", e);
+  }
 }
 
 app.whenReady().then(() => {
@@ -147,10 +161,8 @@ app.whenReady().then(() => {
   });
 });
 
-// 因为我们要常驻后台，所以这里不再需要在 window-all-closed 时 quit
-// 除非显式调用 app.quit
 app.on('window-all-closed', function () {
   if (process.platform !== 'darwin') {
-    // app.quit(); // 注释掉这一行，保持后台运行
+    // app.quit(); // 保持后台运行
   }
 });
