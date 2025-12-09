@@ -11,16 +11,28 @@ import {
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-const createNewNote = (): NoteSession => ({
-  id: generateId(),
-  title: '',
-  inputText: '',
-  attachments: [],
-  result: null,
-  status: AppStatus.IDLE,
-  error: null,
-  createdAt: Date.now(),
-});
+const createNewNote = (): NoteSession => {
+  const now = new Date();
+  const dateStr = now.getFullYear() + '-' + 
+    String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+    String(now.getDate()).padStart(2, '0') + ' ' + 
+    String(now.getHours()).padStart(2, '0') + ':' + 
+    String(now.getMinutes()).padStart(2, '0') + ':' + 
+    String(now.getSeconds()).padStart(2, '0');
+
+  return {
+    id: generateId(),
+    title: '',
+    // Automatically insert date and time styled as metadata
+    inputText: `<p style="color: #94a3b8; font-size: 0.9em;">📅 ${dateStr}</p><p><br/></p>`,
+    attachments: [],
+    result: null,
+    status: AppStatus.IDLE,
+    error: null,
+    createdAt: Date.now(),
+    role: 'autosar' // Default role
+  };
+};
 
 const App: React.FC = () => {
   // Initialize state from local storage or create a default note
@@ -260,7 +272,8 @@ const App: React.FC = () => {
     try {
       // Extract raw files from previews
       const files = activeNote.attachments.map(p => p.file);
-      const markdown = await generateSmartNote(activeNote.inputText, files);
+      // PASS ROLE HERE
+      const markdown = await generateSmartNote(activeNote.inputText, files, activeNote.role);
       
       // Convert Markdown to HTML for the editor
       const aiHtml = markdownToHtml(markdown);
@@ -512,8 +525,10 @@ const App: React.FC = () => {
                  previews={activeNote.attachments}
                  status={activeNote.status}
                  searchQuery={searchQuery} // Pass search query for highlighting
+                 role={activeNote.role}
                  onChangeTitle={(t) => updateActiveNote({ title: t })}
                  onChangeText={(t) => updateActiveNote({ inputText: t })}
+                 onRoleChange={(r) => updateActiveNote({ role: r })}
                  onAddFiles={handleAddFiles}
                  onRemoveFile={handleRemoveFile}
                  onGenerate={handleGenerate}

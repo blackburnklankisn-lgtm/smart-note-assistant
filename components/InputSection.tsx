@@ -3,9 +3,9 @@ import {
   X, Image as ImageIcon, Loader2, Sparkles, 
   Paperclip, File as FileIcon, Bold, Italic, Underline, 
   Heading1, Heading2, Save, Palette, Highlighter, ChevronDown,
-  Type, ALargeSmall, Link as LinkIcon
+  Type, ALargeSmall, Link as LinkIcon, UserCog
 } from 'lucide-react';
-import { ImagePreview, AppStatus } from '../types';
+import { ImagePreview, AppStatus, NoteRole } from '../types';
 
 interface InputSectionProps {
   title: string;
@@ -13,8 +13,10 @@ interface InputSectionProps {
   previews: ImagePreview[]; // These are for PDF attachments mainly
   status: AppStatus;
   searchQuery?: string; // New prop for search highlighting
+  role: NoteRole;
   onChangeTitle: (title: string) => void;
   onChangeText: (html: string) => void;
+  onRoleChange: (role: NoteRole) => void;
   onAddFiles: (files: File[]) => void;
   onRemoveFile: (index: number) => void;
   onGenerate: () => void;
@@ -81,8 +83,10 @@ export const InputSection: React.FC<InputSectionProps> = ({
   previews, 
   status, 
   searchQuery,
+  role,
   onChangeTitle,
   onChangeText,
+  onRoleChange,
   onAddFiles,
   onRemoveFile,
   onGenerate,
@@ -721,7 +725,7 @@ export const InputSection: React.FC<InputSectionProps> = ({
         )}
 
         {/* Action Row */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
           <div className="flex items-center gap-2">
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -744,29 +748,51 @@ export const InputSection: React.FC<InputSectionProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onGenerate}
-            disabled={isProcessing || (text.trim() === '' && previews.length === 0)}
-            className={`
-              flex items-center gap-2 px-6 py-2.5 rounded-xl font-semibold shadow-md transition-all
-              ${isProcessing || (text.trim() === '' && previews.length === 0)
-                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:shadow-lg hover:scale-[1.02] active:scale-95'
-              }
-            `}
-          >
-            {isProcessing ? (
-              <>
-                <Loader2 size={20} className="animate-spin" />
-                <span>Processing...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles size={20} className="text-yellow-300" />
-                <span>Generate Smart Note</span>
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+             {/* Role Selector Dropdown */}
+             <div className="relative group">
+               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                 <UserCog size={16} className="text-slate-500" />
+               </div>
+               <select
+                 value={role}
+                 onChange={(e) => onRoleChange(e.target.value as NoteRole)}
+                 disabled={isProcessing}
+                 className="appearance-none pl-10 pr-8 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none shadow-sm cursor-pointer hover:bg-slate-50 transition-colors w-full sm:w-auto"
+               >
+                 <option value="autosar">AutoSAR Expert</option>
+                 <option value="notebooklm">NotebookLM (Doc Chat)</option>
+                 <option value="general">General Smart Note</option>
+               </select>
+               <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                 <ChevronDown size={14} className="text-slate-400" />
+               </div>
+             </div>
+
+            <button
+              onClick={onGenerate}
+              disabled={isProcessing || (text.trim() === '' && previews.length === 0)}
+              className={`
+                flex-1 sm:flex-initial flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-semibold shadow-md transition-all
+                ${isProcessing || (text.trim() === '' && previews.length === 0)
+                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:shadow-lg hover:scale-[1.02] active:scale-95'
+                }
+              `}
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 size={20} className="animate-spin" />
+                  <span>Processing...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles size={20} className="text-yellow-300" />
+                  <span>Generate Note</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 

@@ -1,6 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
+import { NoteRole } from "../types";
 
-const SYSTEM_INSTRUCTION = `
+const PROMPTS = {
+  autosar: `
 Role (角色设定):
 你是一名资深的 **汽车电子软件架构师 (Automotive Software Architect)** 和 **智能技术顾问**。
 你的用户是汽车电子软件工程师。你的核心任务是将用户的输入（文本、日志片段、图片、PDF规范、网页链接）转化为结构化、专业的工程笔记。
@@ -61,7 +63,38 @@ Output Format (输出格式):
 ## 🌐 参考规范与文档 (References)
 * [AutoSAR SWS_[Module]](URL)
 * [ISO [Standard]](URL)
-`;
+`,
+
+  notebooklm: `
+Role (角色设定):
+你是一名类似 **Google NotebookLM** 的智能文档分析助手。你的核心任务是对用户上传的全部内容（文本、图片、PDF文档）进行深度阅读、综合分析和精准总结。
+
+Strict Constraints (严格限制):
+1. **完全依据来源 (Grounding)**: 所有的回答、总结、洞察必须**完全基于用户本次提供的输入资源**。
+2. **禁止联网引用 (No External Citation)**: 严禁使用外部网络搜索工具，严禁引用互联网上的非用户提供的内容。只分析用户给你的东西。
+3. **忠实原文**: 不要编造原文中不存在的事实。如果用户提出的问题无法从提供的文档中找到答案，请明确说明“提供的资源中未包含此信息”。
+
+Output Format (输出格式):
+请使用结构清晰的 Markdown 格式：
+- **核心洞察 (Key Insights)**: 提炼文档中最有价值的 3-5 个观点。
+- **深度摘要 (Deep Summary)**: 对文档内容进行逻辑化的详细总结，而不是简单的流水账。
+- **引用来源 (Source Citations)**: 在提及具体观点时，尽可能注明出自哪个文件或哪个章节（如果输入包含多个文件）。
+`,
+
+  general: `
+Role (角色设定):
+你是一名通用的 **智能笔记助手 (Smart Note Assistant)**。你的目标是帮助用户高效地整理信息、构建知识库。
+
+Tasks (任务):
+1. **内容重组**: 将用户碎片化、口语化、杂乱的输入文本整理成结构清晰、逻辑严密的专业笔记。
+2. **格式优化**: 充分利用 Markdown 的标题、列表、加粗、代码块等特性，提升可读性。
+3. **智能纠错**: 修正明显的拼写和语法错误，润色语言，使其更加流畅专业。
+4. **要点提炼**: 自动识别并提取内容中的 Action Items (待办事项)、Key Decisions (关键决策) 或 Core Concepts (核心概念)。
+
+Output Format (输出格式):
+生成一份排版精美、结构通用的 Markdown 笔记。
+`
+};
 
 // Helper to safely get API Key in both Vite (local) and other environments
 export const getApiKey = (): string | undefined => {
@@ -89,7 +122,8 @@ export const getApiKey = (): string | undefined => {
 
 export const generateSmartNote = async (
   htmlContent: string,
-  attachments: File[]
+  attachments: File[],
+  role: NoteRole = 'autosar'
 ): Promise<string> => {
   const apiKey = getApiKey();
   
@@ -122,25 +156,31 @@ export const generateSmartNote = async (
 
   // Fallback if empty
   if (finalParts.length === 0) {
-    finalParts.push({ text: "Please analyze the provided context regarding Automotive Software." });
+    finalParts.push({ text: "Please analyze the provided context." });
   }
 
+  // Configure Tools based on Role
+  const tools = [];
+  // AutoSAR and General roles allow Google Search
+  if (role === 'autosar' || role === 'general') {
+    tools.push({ googleSearch: {} });
+  }
+  // NotebookLM role specifically forbids external search (Strict Grounding)
+
   try {
-    // Note: We use gemini-2.5-flash as it supports googleSearch tool
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: { parts: finalParts },
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        temperature: 0.3, // Lower temperature for more rigorous technical output
-        // Enable Google Search for URL analysis and documentation lookup
-        tools: [{ googleSearch: {} }],
+        systemInstruction: PROMPTS[role],
+        temperature: role === 'notebooklm' ? 0.2 : 0.4, // Stricter temperature for document analysis
+        tools: tools.length > 0 ? tools : undefined,
       }
     });
 
     let markdownText = response.text || "No content generated.";
 
-    // Extract grounding chunks to display sources
+    // Extract grounding chunks to display sources (Only relevant if Google Search was used)
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
     
     // Append sources to the markdown if they exist and haven't been implicitly included
@@ -170,7 +210,6 @@ export const generateSmartNote = async (
 
 /**
  * Basic Markdown to HTML converter for editing purposes.
- * Supported: Headers, Bold, Italic, Lists (Basic), Blockquotes, Horizontal Rule.
  */
 export function markdownToHtml(markdown: string): string {
   let html = markdown
@@ -186,8 +225,7 @@ export function markdownToHtml(markdown: string): string {
     .replace(/_(.*)_/gim, '<i>$1</i>')
     // Horizontal Rule
     .replace(/^---$/gim, '<hr />')
-    // Lists (unordered) - Simple approach: just make them divs with bullets for editable content
-    // or wrapped in <ul> if we want structure. For contentEditable, simple styling often works best.
+    // Lists
     .replace(/^\s*-\s+(.*)$/gim, '<ul><li>$1</li></ul>')
     .replace(/^\s*\*\s+(.*)$/gim, '<ul><li>$1</li></ul>')
     // Blockquotes
@@ -197,7 +235,7 @@ export function markdownToHtml(markdown: string): string {
     // New lines to paragraphs or BRs
     .replace(/\n/gim, '<br />');
 
-  // Fix multiple ULs sequence (optional cleanup, but browser handles adjacent ULs okay visually)
+  // Fix multiple ULs sequence
   html = html.replace(/<\/ul>\s*<ul>/gim, ''); 
 
   return html;
@@ -250,9 +288,7 @@ async function parseHtmlToContentParts(html: string): Promise<any[]> {
       // Handle links: append URL to text context for AI visibility
       else if (el.tagName === 'A') {
         const href = (el as HTMLAnchorElement).getAttribute('href');
-        // Filter only valid http/https links to avoid javascript: or internal anchors cluttering context
         if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
-          // We inject the URL into the text stream with a clear label so the AI sees it for web analysis
           currentText += ` (Link URL: ${href}) `;
         }
       }

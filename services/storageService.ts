@@ -19,7 +19,9 @@ export const loadNotesFromStorage = (): NoteSession[] | null => {
       // Ensure defaults for critical fields
       error: null,
       createdAt: note.createdAt || Date.now(),
-      attachmentsCount: note.attachmentsCount || 0 // Optional: could track count even if files are lost
+      attachmentsCount: note.attachmentsCount || 0, // Optional: could track count even if files are lost
+      // Default role to autosar if missing (backward compatibility)
+      role: note.role || 'autosar'
     }));
   } catch (error) {
     console.error("Failed to load notes from storage:", error);
@@ -39,7 +41,8 @@ export const saveNotesToStorage = (notes: NoteSession[]): boolean => {
       // We explicitly do not save attachments array as File objects are not serializable
       // We could save blobs but it would exceed localStorage limits quickly
       attachments: [], 
-      error: null
+      error: null,
+      role: note.role
     }));
     
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanNotes));

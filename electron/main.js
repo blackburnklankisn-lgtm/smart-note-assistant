@@ -40,6 +40,27 @@ function createWindow() {
     }
     // 如果 isQuitting 为 true，则允许窗口正常关闭
   });
+
+  // 4. [新增] 右键菜单支持 (Context Menu)
+  // Electron 默认没有右键菜单，需要手动实现
+  mainWindow.webContents.on('context-menu', (event, params) => {
+    const menuTemplate = [
+      { role: 'undo' },
+      { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' },
+      { role: 'copy' },
+      { role: 'paste' },
+      { type: 'separator' },
+      { role: 'selectAll' }
+    ];
+
+    // 仅在用户点击了可编辑区域，或者选中了文本时，才弹出菜单
+    if (params.isEditable || params.selectionText.length > 0) {
+      const menu = Menu.buildFromTemplate(menuTemplate);
+      menu.popup({ window: mainWindow });
+    }
+  });
 }
 
 function createMenu() {
