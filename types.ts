@@ -21,7 +21,7 @@ export enum AppStatus {
   ERROR = 'ERROR',
 }
 
-export type NoteRole = 'autosar' | 'notebooklm' | 'general';
+export type NoteRole = 'autosar' | 'notebooklm' | 'general' | 'weekly';
 
 export interface NoteSession {
   id: string;

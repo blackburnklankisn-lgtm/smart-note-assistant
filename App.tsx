@@ -6,12 +6,12 @@ import { loadNotesFromStorage, saveNotesToStorage } from './services/storageServ
 import { 
   BrainCircuit, Plus, FileText, ChevronRight, Menu, X, MessageSquarePlus,
   Loader2, CheckCircle2, AlertCircle, Trash2, AlertTriangle, Search, GripVertical,
-  Copy, Settings
+  Copy, Settings, CalendarClock
 } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-const createNewNote = (): NoteSession => {
+const createNewNote = (title: string = ''): NoteSession => {
   const now = new Date();
   const dateStr = now.getFullYear() + '-' + 
     String(now.getMonth() + 1).padStart(2, '0') + '-' + 
@@ -22,7 +22,7 @@ const createNewNote = (): NoteSession => {
 
   return {
     id: generateId(),
-    title: '',
+    title: title,
     // Automatically insert date and time styled as metadata
     inputText: `<p style="color: #94a3b8; font-size: 0.9em;">📅 ${dateStr}</p><p><br/></p>`,
     attachments: [],
@@ -56,8 +56,16 @@ const App: React.FC = () => {
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
+  // Ref to hold current notes for the scheduler to access without adding notes to dependency array
+  const notesRef = useRef(notes);
+
   // Ensure activeNote is always valid, fallback to first note if ID not found
   const activeNote = notes.find(n => n.id === activeNoteId) || notes[0];
+
+  // Update ref whenever notes change
+  useEffect(() => {
+    notesRef.current = notes;
+  }, [notes]);
 
   // Load API Key on mount
   useEffect(() => {
@@ -171,6 +179,129 @@ const App: React.FC = () => {
     // Immediate save
     saveNotesToStorage([newNote, ...notes]);
   };
+
+  // Weekly Summary Logic
+  const handleWeeklySummary = async (isAutoTrigger = false) => {
+    setSearchQuery('');
+    
+    // 1. Calculate Date Range (Monday to Friday of current week)
+    const now = new Date();
+    const day = now.getDay(); // 0 (Sun) - 6 (Sat)
+    const diffToMon = now.getDate() - day + (day === 0 ? -6 : 1); 
+    
+    const monday = new Date(now);
+    monday.setDate(diffToMon);
+    monday.setHours(0,0,0,0);
+
+    const friday = new Date(monday);
+    friday.setDate(monday.getDate() + 4);
+    friday.setHours(23,59,59,999);
+
+    // 2. Filter Notes (Created/Modified this week)
+    // We use notesRef.current to get the latest notes without needing to be in the component render cycle context if triggered by timer
+    const currentNotes = notesRef.current;
+    const weeklyNotes = currentNotes.filter(n => {
+      const noteDate = new Date(n.createdAt);
+      return noteDate >= monday && noteDate <= friday && n.title !== 'Weekly Summary'; // Exclude existing summary title to avoid recursion
+    });
+
+    if (weeklyNotes.length === 0) {
+      if (!isAutoTrigger) alert("No notes found for this week (Mon-Fri).");
+      return;
+    }
+
+    // 3. Create Context Content
+    let aggregatedContent = `
+    <h1>Weekly Notes Aggregation (${monday.toLocaleDateString()} - ${friday.toLocaleDateString()})</h1>
+    <p>Please summarize the following notes created this week:</p>
+    <hr/>
+    `;
+
+    weeklyNotes.forEach(n => {
+      // Per user request: Do NOT include the AI generated summary.
+      // We must strip out the "Smart Note Update" section from inputText.
+      let contentToUse = n.inputText;
+      
+      // Look for the unique separator style defined in handleGenerate
+      const separatorMarker = '<hr style="margin: 2em 0; border: 0; border-top: 2px dashed #e2e8f0;"/>';
+      const splitIndex = contentToUse.indexOf(separatorMarker);
+      
+      if (splitIndex !== -1) {
+        // Keep only the text BEFORE the separator
+        contentToUse = contentToUse.substring(0, splitIndex);
+      }
+      
+      aggregatedContent += `
+        <h3>Date: ${new Date(n.createdAt).toLocaleDateString()} - Title: ${n.title || 'Untitled'}</h3>
+        <div style="border-left: 2px solid #ccc; padding-left: 10px; margin-bottom: 20px;">
+          ${contentToUse}
+        </div>
+        <hr/>
+      `;
+    });
+
+    // 4. Create the new Note Container
+    const summaryNote = createNewNote('Weekly Summary');
+    summaryNote.role = 'weekly';
+    summaryNote.status = AppStatus.PROCESSING;
+    // Don't show the massive raw text. Show a placeholder while processing.
+    summaryNote.inputText = `<p class="text-slate-400 italic">🤖 Analyzing your notes and generating Weekly Summary...</p>`; 
+
+    // Add to state
+    setNotes(prev => [summaryNote, ...prev]);
+    setActiveNoteId(summaryNote.id);
+    if (window.innerWidth < 1024) setIsSidebarOpen(false);
+
+    // 5. Trigger Generation
+    try {
+      const markdown = await generateSmartNote(aggregatedContent, [], 'weekly');
+      
+      const aiHtml = markdownToHtml(markdown);
+      
+      // Update the note with the result
+      setNotes(prev => prev.map(n => {
+        if (n.id === summaryNote.id) {
+          return {
+            ...n,
+            result: { markdown, timestamp: Date.now() },
+            status: AppStatus.SUCCESS,
+            // Replace inputText entirely with the AI summary
+            inputText: aiHtml
+          };
+        }
+        return n;
+      }));
+      
+      // Save
+      saveNotesToStorage([summaryNote, ...notesRef.current]); // Use ref to get latest + new
+      
+    } catch (error: any) {
+      console.error("Weekly Summary Failed", error);
+      setNotes(prev => prev.map(n => n.id === summaryNote.id ? { ...n, status: AppStatus.ERROR, error: error.message } : n));
+    }
+  };
+
+  // Scheduler: Check time every minute
+  useEffect(() => {
+    const checkTime = () => {
+      const now = new Date();
+      // Friday is day 5. 5 PM is 17:00.
+      if (now.getDay() === 5 && now.getHours() === 17 && now.getMinutes() === 0) {
+        const lastRunKey = 'last_auto_weekly_summary_date';
+        const lastRunDate = localStorage.getItem(lastRunKey);
+        const todayStr = now.toDateString();
+
+        if (lastRunDate !== todayStr) {
+          console.log("Triggering Auto Weekly Summary...");
+          handleWeeklySummary(true);
+          localStorage.setItem(lastRunKey, todayStr);
+        }
+      }
+    };
+
+    const intervalId = setInterval(checkTime, 30000); // Check every 30s to be safe
+    return () => clearInterval(intervalId);
+  }, []);
 
   const handleDuplicateNote = (e: React.MouseEvent, noteId: string) => {
     e.preventDefault();
@@ -375,9 +506,9 @@ const App: React.FC = () => {
             </button>
           </div>
 
-          <div className="p-5 pb-2">
+          <div className="p-5 pb-2 space-y-3">
             {/* Search Bar */}
-            <div className="relative mb-4">
+            <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input 
                 type="text" 
@@ -394,6 +525,15 @@ const App: React.FC = () => {
             >
               <Plus size={20} className="group-hover:rotate-90 transition-transform duration-300" />
               New Note
+            </button>
+
+            <button 
+              onClick={() => handleWeeklySummary(false)}
+              className="w-full py-2.5 px-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl font-medium flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 text-sm"
+              title="Generate summary for this week's notes"
+            >
+              <CalendarClock size={16} />
+              Weekly Summary
             </button>
           </div>
 
@@ -413,7 +553,12 @@ const App: React.FC = () => {
                     : 'hover:bg-slate-50 text-slate-600 border-transparent'
                 }`}
               >
-                <FileText size={18} className={`mt-0.5 flex-shrink-0 ${activeNoteId === note.id ? 'text-blue-500' : 'text-slate-400'}`} />
+                {note.title === 'Weekly Summary' ? (
+                   <CalendarClock size={18} className={`mt-0.5 flex-shrink-0 ${activeNoteId === note.id ? 'text-indigo-500' : 'text-indigo-400'}`} />
+                ) : (
+                   <FileText size={18} className={`mt-0.5 flex-shrink-0 ${activeNoteId === note.id ? 'text-blue-500' : 'text-slate-400'}`} />
+                )}
+                
                 <div className="flex-1 min-w-0 pr-14">
                   <div className={`font-semibold truncate ${activeNoteId === note.id ? 'text-slate-900' : 'text-slate-700'}`}>
                     {note.title || "Untitled Note"}
