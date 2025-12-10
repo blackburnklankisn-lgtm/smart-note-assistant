@@ -58,13 +58,11 @@ const createNewNote = (title: string = ''): NoteSession => {
 };
 
 const App: React.FC = () => {
-  // Initialize state from local storage or create a default note
-  const [notes, setNotes] = useState<NoteSession[]>(() => {
-    const saved = loadNotesFromStorage();
-    return saved && saved.length > 0 ? saved : [createNewNote()];
-  });
+  // State initialization
+  const [isStorageInitialized, setIsStorageInitialized] = useState(false);
+  const [notes, setNotes] = useState<NoteSession[]>([]);
+  const [activeNoteId, setActiveNoteId] = useState<string>('');
   
-  const [activeNoteId, setActiveNoteId] = useState<string>(notes[0].id);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -77,18 +75,38 @@ const App: React.FC = () => {
   // Chat Panel State
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isChatLoading, setIsChatLoading] = useState(false);
-  const [chatDraft, setChatDraft] = useState<string>(''); // For pre-filling chat from selection
+  const [chatDraft, setChatDraft] = useState<string>(''); 
 
   // Resizable Sidebar State
-  const [sidebarWidth, setSidebarWidth] = useState(288); // Default 288px (w-72)
+  const [sidebarWidth, setSidebarWidth] = useState(288);
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   // Ref to hold current notes for the scheduler to access without adding notes to dependency array
   const notesRef = useRef(notes);
 
-  // Ensure activeNote is always valid, fallback to first note if ID not found
-  const activeNote = notes.find(n => n.id === activeNoteId) || notes[0];
+  // ASYNC INITIALIZATION: Load notes from IndexedDB
+  useEffect(() => {
+    const initApp = async () => {
+      const savedNotes = await loadNotesFromStorage();
+      
+      if (savedNotes && savedNotes.length > 0) {
+        setNotes(savedNotes);
+        setActiveNoteId(savedNotes[0].id);
+      } else {
+        // First time user or empty DB
+        const newNote = createNewNote();
+        setNotes([newNote]);
+        setActiveNoteId(newNote.id);
+        // Save the default note immediately
+        saveNotesToStorage([newNote]);
+      }
+      
+      setIsStorageInitialized(true);
+    };
+
+    initApp();
+  }, []);
 
   // Update ref whenever notes change
   useEffect(() => {
@@ -103,29 +121,19 @@ const App: React.FC = () => {
 
   // Auto-save effect: Triggers 2 seconds after the last change to 'notes'
   useEffect(() => {
-    if (notes.length === 0) return;
+    if (!isStorageInitialized || notes.length === 0) return;
+    
     setSaveStatus('saving');
-    const timer = setTimeout(() => {
-      const success = saveNotesToStorage(notes);
+    const timer = setTimeout(async () => {
+      const success = await saveNotesToStorage(notes);
       setSaveStatus(success ? 'saved' : 'error');
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [notes]);
+  }, [notes, isStorageInitialized]);
 
-  // Ensure activeNoteId is valid when notes change
-  useEffect(() => {
-    if (!notes.find(n => n.id === activeNoteId)) {
-      if (notes.length > 0) {
-        setActiveNoteId(notes[0].id);
-      } else {
-        // If all notes were deleted (should be handled in delete handler, but as safeguard)
-        const newNote = createNewNote();
-        setNotes([newNote]);
-        setActiveNoteId(newNote.id);
-      }
-    }
-  }, [notes, activeNoteId]);
+  // Ensure activeNote is valid
+  const activeNote = notes.find(n => n.id === activeNoteId) || notes[0];
 
   // Handle Resizing Logic
   const startResizing = useCallback(() => {
@@ -153,7 +161,6 @@ const App: React.FC = () => {
     if (isResizing) {
       window.addEventListener("mousemove", resize);
       window.addEventListener("mouseup", stopResizing);
-      // Disable text selection while dragging
       document.body.style.userSelect = "none";
       document.body.style.cursor = "col-resize";
     } else {
@@ -170,19 +177,16 @@ const App: React.FC = () => {
     };
   }, [isResizing, resize, stopResizing]);
 
-  // Filter notes based on search query (Multi-keyword support)
+  // Filter notes based on search query
   const filteredNotes = notes.filter(note => {
     const query = searchQuery.toLowerCase().trim();
     if (!query) return true;
     
-    // Split query by spaces to support multi-keyword matching (e.g. "AutoSAR Error")
     const keywords = query.split(/\s+/).filter(k => k.length > 0);
-    
     const title = (note.title || '').toLowerCase();
     const content = (note.inputText || '').toLowerCase();
     const generated = (note.result?.markdown || '').toLowerCase();
     
-    // Note must contain ALL keywords in either title, content, or generated result
     return keywords.every(keyword => 
       title.includes(keyword) || 
       content.includes(keyword) || 
@@ -196,25 +200,23 @@ const App: React.FC = () => {
     ));
   };
 
-  const handleAddNote = () => {
-    setSearchQuery(''); // Clear search so the new note is visible
+  const handleAddNote = async () => {
+    setSearchQuery('');
     const newNote = createNewNote();
     setNotes(prev => [newNote, ...prev]);
     setActiveNoteId(newNote.id);
     if (window.innerWidth < 1024) {
       setIsSidebarOpen(false);
     }
-    // Immediate save
+    // Immediate save trigger (async)
     saveNotesToStorage([newNote, ...notes]);
   };
 
-  // Weekly Summary Logic
   const handleWeeklySummary = async (isAutoTrigger = false) => {
     setSearchQuery('');
     
-    // 1. Calculate Date Range (Monday to Friday of current week)
     const now = new Date();
-    const day = now.getDay(); // 0 (Sun) - 6 (Sat)
+    const day = now.getDay(); 
     const diffToMon = now.getDate() - day + (day === 0 ? -6 : 1); 
     
     const monday = new Date(now);
@@ -225,12 +227,10 @@ const App: React.FC = () => {
     friday.setDate(monday.getDate() + 4);
     friday.setHours(23,59,59,999);
 
-    // 2. Filter Notes (Created/Modified this week)
-    // We use notesRef.current to get the latest notes without needing to be in the component render cycle context if triggered by timer
     const currentNotes = notesRef.current;
     const weeklyNotes = currentNotes.filter(n => {
       const noteDate = new Date(n.createdAt);
-      return noteDate >= monday && noteDate <= friday && n.title !== 'Weekly Summary'; // Exclude existing summary title to avoid recursion
+      return noteDate >= monday && noteDate <= friday && n.title !== 'Weekly Summary'; 
     });
 
     if (weeklyNotes.length === 0) {
@@ -238,7 +238,6 @@ const App: React.FC = () => {
       return;
     }
 
-    // 3. Create Context Content
     let aggregatedContent = `
     <h1>Weekly Notes Aggregation (${monday.toLocaleDateString()} - ${friday.toLocaleDateString()})</h1>
     <p>Please summarize the following notes created this week:</p>
@@ -246,16 +245,11 @@ const App: React.FC = () => {
     `;
 
     weeklyNotes.forEach(n => {
-      // Per user request: Do NOT include the AI generated summary.
-      // We must strip out the "Smart Note Update" section from inputText.
       let contentToUse = n.inputText;
-      
-      // Look for the unique separator style defined in handleGenerate
       const separatorMarker = '<hr style="margin: 2em 0; border: 0; border-top: 2px dashed #e2e8f0;"/>';
       const splitIndex = contentToUse.indexOf(separatorMarker);
       
       if (splitIndex !== -1) {
-        // Keep only the text BEFORE the separator
         contentToUse = contentToUse.substring(0, splitIndex);
       }
       
@@ -268,43 +262,32 @@ const App: React.FC = () => {
       `;
     });
 
-    // 4. Create the new Note Container
     const summaryNote = createNewNote('Weekly Summary');
     summaryNote.role = 'weekly';
     summaryNote.status = AppStatus.PROCESSING;
-    // Don't show the massive raw text. Show a placeholder while processing.
     summaryNote.inputText = `<p class="text-slate-400 italic">🤖 Analyzing your notes and generating Weekly Summary...</p>`; 
 
-    // Add to state
     setNotes(prev => [summaryNote, ...prev]);
     setActiveNoteId(summaryNote.id);
     if (window.innerWidth < 1024) setIsSidebarOpen(false);
 
-    // 5. Trigger Generation
     try {
       const markdown = await generateSmartNote(aggregatedContent, [], 'weekly');
-      
       const aiHtml = markdownToHtml(markdown);
-      
-      // Wrap in black color reset style
       const styledAiHtml = `<div style="${RESET_AI_STYLE}">${aiHtml}</div>`;
 
-      // Update the note with the result
-      setNotes(prev => prev.map(n => {
-        if (n.id === summaryNote.id) {
-          return {
-            ...n,
-            result: { markdown, timestamp: Date.now() },
-            status: AppStatus.SUCCESS,
-            // Replace inputText entirely with the AI summary
-            inputText: styledAiHtml
-          };
-        }
-        return n;
-      }));
+      // Update local state with result
+      const updatedSummaryNote = {
+        ...summaryNote,
+        result: { markdown, timestamp: Date.now() },
+        status: AppStatus.SUCCESS,
+        inputText: styledAiHtml
+      };
+
+      setNotes(prev => prev.map(n => n.id === summaryNote.id ? updatedSummaryNote : n));
       
-      // Save
-      saveNotesToStorage([summaryNote, ...notesRef.current]); // Use ref to get latest + new
+      // Save updated state
+      saveNotesToStorage([updatedSummaryNote, ...notesRef.current]);
       
     } catch (error: any) {
       console.error("Weekly Summary Failed", error);
@@ -312,11 +295,10 @@ const App: React.FC = () => {
     }
   };
 
-  // Scheduler: Check time every minute
+  // Scheduler
   useEffect(() => {
     const checkTime = () => {
       const now = new Date();
-      // Friday is day 5. 5 PM is 17:00.
       if (now.getDay() === 5 && now.getHours() === 17 && now.getMinutes() === 0) {
         const lastRunKey = 'last_auto_weekly_summary_date';
         const lastRunDate = localStorage.getItem(lastRunKey);
@@ -330,7 +312,7 @@ const App: React.FC = () => {
       }
     };
 
-    const intervalId = setInterval(checkTime, 30000); // Check every 30s to be safe
+    const intervalId = setInterval(checkTime, 30000); 
     return () => clearInterval(intervalId);
   }, []);
 
@@ -348,12 +330,11 @@ const App: React.FC = () => {
       createdAt: Date.now(),
       status: AppStatus.IDLE,
       error: null,
-      // Create new object URLs for attachments to avoid revocation issues
       attachments: noteToCopy.attachments.map(att => ({
         ...att,
         url: URL.createObjectURL(att.file)
       })),
-      chatHistory: [] // Don't duplicate chat history for now
+      chatHistory: [] 
     };
     
     setNotes(prev => [newNote, ...prev]);
@@ -361,7 +342,6 @@ const App: React.FC = () => {
   };
 
   const requestDeleteNote = (e: React.MouseEvent, noteId: string) => {
-    // Strictly stop propagation to prevent the row click handler from firing
     e.preventDefault();
     e.stopPropagation();
     setDeleteTargetId(noteId);
@@ -370,11 +350,8 @@ const App: React.FC = () => {
   const confirmDeleteNote = () => {
     if (!deleteTargetId) return;
     const noteId = deleteTargetId;
-
-    // 1. Determine the new list of notes
     const newNotes = notes.filter(n => n.id !== noteId);
     
-    // 2. Handle empty state: If last note deleted, create a fresh one
     if (newNotes.length === 0) {
       const freshNote = createNewNote();
       setNotes([freshNote]);
@@ -384,35 +361,24 @@ const App: React.FC = () => {
       return;
     }
 
-    // 3. Update active note if we deleted the current one
     if (activeNoteId === noteId) {
-      // Find index of the deleted note in the original list
       const deletedIndex = notes.findIndex(n => n.id === noteId);
-      
-      // Try to go to the previous note (above), otherwise go to the next (below/first)
-      // Adjust index to be valid in the new array
       let newActiveIndex = deletedIndex > 0 ? deletedIndex - 1 : 0;
-      
-      // Ensure bounds safety
       if (newActiveIndex >= newNotes.length) {
         newActiveIndex = newNotes.length - 1;
       }
-      
       setActiveNoteId(newNotes[newActiveIndex].id);
     }
 
-    // 4. Update state and force save
     setNotes(newNotes);
     saveNotesToStorage(newNotes);
     setDeleteTargetId(null);
   };
 
-  const handleManualSave = () => {
+  const handleManualSave = async () => {
     setSaveStatus('saving');
-    const success = saveNotesToStorage(notes);
-    setTimeout(() => {
-      setSaveStatus(success ? 'saved' : 'error');
-    }, 500);
+    const success = await saveNotesToStorage(notes);
+    setSaveStatus(success ? 'saved' : 'error');
   };
   
   const handleSaveSettings = () => {
@@ -433,21 +399,12 @@ const App: React.FC = () => {
     updateActiveNote({ status: AppStatus.PROCESSING, error: null });
 
     try {
-      // Extract raw files from previews
       const files = activeNote.attachments.map(p => p.file);
-      // PASS ROLE HERE
       const markdown = await generateSmartNote(activeNote.inputText, files, activeNote.role);
-      
-      // Convert Markdown to HTML for the editor
       const aiHtml = markdownToHtml(markdown);
-      
-      // Append to current text with a separator and timestamp versioning
       const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const separator = `<br/><br/><hr style="margin: 2em 0; border: 0; border-top: 2px dashed #e2e8f0;"/><h2 style="color: #2563eb; font-size: 1.25em;">✨ Smart Note Update (${timestamp})</h2><br/>`;
-      
-      // Wrap in black color reset style
       const styledAiHtml = `<div style="${RESET_AI_STYLE}">${aiHtml}</div>`;
-      
       const newContent = activeNote.inputText + separator + styledAiHtml;
 
       const updatedNote = {
@@ -461,10 +418,9 @@ const App: React.FC = () => {
         title: activeNote.title || "Smart Note " + new Date().toLocaleDateString()
       };
 
-      // Update state manually to ensure immediate sync for save
       setNotes(prev => prev.map(n => n.id === activeNoteId ? updatedNote : n));
       
-      // Trigger an immediate save after generation
+      // Immediate save
       saveNotesToStorage(notes.map(n => n.id === activeNoteId ? updatedNote : n));
       
     } catch (err: any) {
@@ -476,10 +432,8 @@ const App: React.FC = () => {
     }
   };
 
-  // Chat Logic
   const handleSendChatMessage = async (text: string) => {
     setIsChatLoading(true);
-    
     const newUserMsg: ChatMessage = {
       id: generateId(),
       role: 'user',
@@ -487,21 +441,15 @@ const App: React.FC = () => {
       timestamp: Date.now()
     };
 
-    // Optimistic Update
     const updatedHistory = [...activeNote.chatHistory, newUserMsg];
     updateActiveNote({ chatHistory: updatedHistory });
 
     try {
-      // Prepare context files
       const files = activeNote.attachments.map(p => p.file);
-      
       const responseText = await chatWithNote(
         activeNote.inputText,
         files,
-        activeNote.chatHistory, // Pass original history before optimistic update (or new one? API expects previous history + new prompt is separate)
-                                // Function expects "chatHistory" so it constructs prompt. 
-                                // Actually better to pass previous history and let service append user msg if designed that way.
-                                // My service implementation takes "chatHistory" (previous) and "newMessage".
+        activeNote.chatHistory, 
         text,
         activeNote.role
       );
@@ -537,7 +485,6 @@ const App: React.FC = () => {
 
   const handleChatWithSelection = (text: string) => {
     setIsChatOpen(true);
-    // Add quoted format
     setChatDraft(`> ${text}\n\n`);
   };
 
@@ -569,6 +516,24 @@ const App: React.FC = () => {
       });
     };
   }, []);
+
+  // --- RENDER LOADING SCREEN ---
+  if (!isStorageInitialized) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-4 text-slate-400">
+           <Loader2 size={40} className="animate-spin text-blue-500" />
+           <p className="font-medium animate-pulse">Loading your Smart Notes...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // --- RENDER MAIN APP ---
+  // Ensure activeNote exists to prevent crashes if ID mismatch occurred
+  if (!activeNote) {
+     return <div className="h-screen flex items-center justify-center">Loading...</div>;
+  }
 
   return (
     <div className="h-screen bg-slate-50 text-slate-900 font-sans flex overflow-hidden">
