@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { NoteRole } from "../types";
+import { NoteRole, ChatMessage } from "../types";
 
 const PROMPTS = {
   autosar: `
@@ -234,6 +234,95 @@ export const generateSmartNote = async (
     return markdownText;
   } catch (error) {
     console.error("Error generating note:", error);
+    throw error;
+  }
+};
+
+/**
+ * Chat with the current note context (Q&A Mode)
+ */
+export const chatWithNote = async (
+  noteHtml: string,
+  noteAttachments: File[],
+  chatHistory: ChatMessage[],
+  newMessage: string,
+  role: NoteRole
+): Promise<string> => {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("API Key is missing.");
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  // 1. Prepare Context (Note Content + Attachments)
+  const contentParts = await parseHtmlToContentParts(noteHtml);
+  const attachmentParts = await Promise.all(
+    noteAttachments.map(async (file) => {
+      const base64Data = await fileToGenerativePart(file);
+      return {
+        inlineData: {
+          data: base64Data,
+          mimeType: file.type,
+        },
+      };
+    })
+  );
+
+  // 2. Construct Conversation History
+  // We feed the entire note as the "Context" in the first turn or as System Instruction extensions.
+  // Using a robust stateless approach:
+  // Turn 1 [User]: "Context: [All Note Content]. Please use this context for the following conversation."
+  // Turn 1 [Model]: "Understood."
+  // ... History ...
+  // Last [User]: New Message
+
+  const contextMessage = {
+    role: 'user',
+    parts: [
+      { text: `CONTEXT START\n${PROMPTS[role]}\n\nHere is the current content of the note you are discussing:\n` },
+      ...contentParts,
+      ...attachmentParts,
+      { text: "\nCONTEXT END\n\nPlease answer the following questions based on the context above." }
+    ]
+  };
+
+  const modelAck = {
+    role: 'model',
+    parts: [{ text: "Understood. I have analyzed the note content and role. What is your question?" }]
+  };
+
+  const historyParts = chatHistory.map(msg => ({
+    role: msg.role,
+    parts: [{ text: msg.text }]
+  }));
+
+  const userPrompt = {
+    role: 'user',
+    parts: [{ text: newMessage }]
+  };
+
+  const contents = [contextMessage, modelAck, ...historyParts, userPrompt];
+
+  // Configure Tools (Consistent with Note Generation)
+  const tools = [];
+  if (role === 'autosar' || role === 'general' || role === 'weekly') {
+    tools.push({ googleSearch: {} });
+  }
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: contents,
+      config: {
+        // We include a simplified system instruction just to enforce behavior, 
+        // though the main role prompt is in the context message.
+        systemInstruction: "You are a helpful AI assistant. Answer the user's questions based on the provided note context.",
+        tools: tools.length > 0 ? tools : undefined,
+      }
+    });
+
+    return response.text || "I couldn't generate a response.";
+  } catch (error) {
+    console.error("Chat error:", error);
     throw error;
   }
 };

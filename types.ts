@@ -23,6 +23,14 @@ export enum AppStatus {
 
 export type NoteRole = 'autosar' | 'notebooklm' | 'general' | 'weekly';
 
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'model';
+  text: string;
+  timestamp: number;
+  isError?: boolean;
+}
+
 export interface NoteSession {
   id: string;
   title: string;
@@ -33,4 +41,5 @@ export interface NoteSession {
   error: string | null;
   createdAt: number;
   role: NoteRole;
+  chatHistory: ChatMessage[];
 }

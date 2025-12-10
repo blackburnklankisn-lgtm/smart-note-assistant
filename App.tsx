@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { InputSection } from './components/InputSection';
-import { generateSmartNote, markdownToHtml } from './services/geminiService';
-import { AppStatus, NoteSession, ImagePreview } from './types';
+import { generateSmartNote, markdownToHtml, chatWithNote } from './services/geminiService';
+import { AppStatus, NoteSession, ImagePreview, ChatMessage } from './types';
 import { loadNotesFromStorage, saveNotesToStorage } from './services/storageService';
+import { ChatPanel } from './components/ChatPanel';
 import { 
   BrainCircuit, Plus, FileText, ChevronRight, Menu, X, MessageSquarePlus,
   Loader2, CheckCircle2, AlertCircle, Trash2, AlertTriangle, Search, GripVertical,
-  Copy, Settings, CalendarClock
+  Copy, Settings, CalendarClock, MessageCircleQuestion
 } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -30,7 +31,8 @@ const createNewNote = (title: string = ''): NoteSession => {
     status: AppStatus.IDLE,
     error: null,
     createdAt: Date.now(),
-    role: 'autosar' // Default role
+    role: 'autosar', // Default role
+    chatHistory: [] // Init chat history
   };
 };
 
@@ -50,6 +52,10 @@ const App: React.FC = () => {
   // Settings State
   const [showSettings, setShowSettings] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
+
+  // Chat Panel State
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isChatLoading, setIsChatLoading] = useState(false);
 
   // Resizable Sidebar State
   const [sidebarWidth, setSidebarWidth] = useState(288); // Default 288px (w-72)
@@ -321,7 +327,8 @@ const App: React.FC = () => {
       attachments: noteToCopy.attachments.map(att => ({
         ...att,
         url: URL.createObjectURL(att.file)
-      }))
+      })),
+      chatHistory: [] // Don't duplicate chat history for now
     };
     
     setNotes(prev => [newNote, ...prev]);
@@ -437,6 +444,65 @@ const App: React.FC = () => {
         status: AppStatus.ERROR,
         error: err.message || "An unexpected error occurred."
       });
+    }
+  };
+
+  // Chat Logic
+  const handleSendChatMessage = async (text: string) => {
+    setIsChatLoading(true);
+    
+    const newUserMsg: ChatMessage = {
+      id: generateId(),
+      role: 'user',
+      text: text,
+      timestamp: Date.now()
+    };
+
+    // Optimistic Update
+    const updatedHistory = [...activeNote.chatHistory, newUserMsg];
+    updateActiveNote({ chatHistory: updatedHistory });
+
+    try {
+      // Prepare context files
+      const files = activeNote.attachments.map(p => p.file);
+      
+      const responseText = await chatWithNote(
+        activeNote.inputText,
+        files,
+        activeNote.chatHistory, // Pass original history before optimistic update (or new one? API expects previous history + new prompt is separate)
+                                // Function expects "chatHistory" so it constructs prompt. 
+                                // Actually better to pass previous history and let service append user msg if designed that way.
+                                // My service implementation takes "chatHistory" (previous) and "newMessage".
+        text,
+        activeNote.role
+      );
+
+      const newAiMsg: ChatMessage = {
+        id: generateId(),
+        role: 'model',
+        text: responseText,
+        timestamp: Date.now()
+      };
+
+      updateActiveNote({ chatHistory: [...updatedHistory, newAiMsg] });
+
+    } catch (error: any) {
+      const errorMsg: ChatMessage = {
+        id: generateId(),
+        role: 'model',
+        text: "Sorry, I encountered an error: " + error.message,
+        timestamp: Date.now(),
+        isError: true
+      };
+      updateActiveNote({ chatHistory: [...updatedHistory, errorMsg] });
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
+  const handleClearChat = () => {
+    if (confirm("Clear chat history?")) {
+        updateActiveNote({ chatHistory: [] });
     }
   };
 
@@ -630,46 +696,42 @@ const App: React.FC = () => {
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
         
         {/* Mobile Header */}
-        <header className="lg:hidden bg-white/80 backdrop-blur-md border-b border-slate-200 h-16 flex items-center justify-between px-4 flex-shrink-0 z-20">
+        <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 h-16 flex items-center justify-between px-4 flex-shrink-0 z-20">
           <div className="flex items-center gap-3">
-            <button onClick={() => setIsSidebarOpen(true)} className="p-2 -ml-2 text-slate-600">
+            <button onClick={() => setIsSidebarOpen(true)} className="p-2 -ml-2 text-slate-600 lg:hidden">
               <Menu size={24} />
             </button>
-            <span className="font-semibold text-slate-800 truncate max-w-[200px]">
+            <span className="font-semibold text-slate-800 truncate max-w-[200px] lg:max-w-none">
               {activeNote.title || "Untitled Note"}
             </span>
           </div>
           <div className="flex items-center gap-1">
-             <button onClick={handleManualSave} className="text-blue-600 p-2">
-                <CheckCircle2 size={22} />
+             <button 
+                onClick={() => setIsChatOpen(!isChatOpen)}
+                className={`p-2 rounded-lg transition-colors ${isChatOpen ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:text-slate-700'}`}
+                title="Chat with Note"
+             >
+                <MessageCircleQuestion size={22} />
              </button>
-             <button onClick={handleAddNote} className="text-slate-600 p-2">
-               <MessageSquarePlus size={24} />
+             <button onClick={handleManualSave} className="text-blue-600 p-2 lg:hidden">
+                <CheckCircle2 size={22} />
              </button>
           </div>
         </header>
 
-        {/* Content Container */}
-        <main className="flex-1 overflow-hidden bg-slate-100/50 p-0 lg:p-6">
-          {/* Removed max-w-5xl restriction to allow larger resizing */}
-          <div className="h-full w-full mx-auto flex flex-col items-center">
-            
-            {/* Input Section (Document Editor) */}
-            <div className="flex-1 h-full min-h-0 w-full overflow-visible">
-               {/* 
-                  KEY PROP IS CRITICAL: 
-                  It forces React to fully unmount the old editor and mount a new one 
-                  whenever the activeNote.id changes. This ensures that when a note is 
-                  deleted and we switch to the next one, the editor DOES NOT hold onto 
-                  stale content from the deleted note.
-               */}
+        {/* Content Container (Split View for Chat) */}
+        <main className="flex-1 flex overflow-hidden bg-slate-100/50 relative">
+          
+          {/* Note Editor Area */}
+          <div className="flex-1 h-full min-h-0 w-full overflow-visible p-0 lg:p-6 transition-all">
+            <div className="h-full w-full mx-auto flex flex-col items-center">
                <InputSection 
                  key={activeNote.id}
                  title={activeNote.title}
                  text={activeNote.inputText}
                  previews={activeNote.attachments}
                  status={activeNote.status}
-                 searchQuery={searchQuery} // Pass search query for highlighting
+                 searchQuery={searchQuery}
                  role={activeNote.role}
                  onChangeTitle={(t) => updateActiveNote({ title: t })}
                  onChangeText={(t) => updateActiveNote({ inputText: t })}
@@ -690,8 +752,21 @@ const App: React.FC = () => {
                  </div>
                )}
             </div>
-
           </div>
+
+          {/* Chat Panel (Right Sidebar) */}
+          {isChatOpen && (
+            <div className="absolute right-0 top-0 bottom-0 z-50 lg:static lg:z-auto h-full animate-in slide-in-from-right-10 duration-200">
+               <ChatPanel 
+                 history={activeNote.chatHistory || []}
+                 isLoading={isChatLoading}
+                 onSendMessage={handleSendChatMessage}
+                 onClose={() => setIsChatOpen(false)}
+                 onClearHistory={handleClearChat}
+               />
+            </div>
+          )}
+
         </main>
       </div>
 
