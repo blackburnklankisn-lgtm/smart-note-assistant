@@ -48,11 +48,11 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
     
     try {
       // 1. User Guidance Alert
-      // We must explain this because "Screen Share" is the only way to get System Audio in Web/Electron
       const confirmed = window.confirm(
-        "To record the meeting (including what others say), you must:\n\n" +
-        "1. Select the 'Entire Screen' tab in the next popup.\n" +
-        "2. IMPORTANT: Check the 'Share system audio' box at the bottom.\n\n" +
+        "Meeting Recording Mode:\n\n" +
+        "1. Select 'Entire Screen' in the popup.\n" +
+        "2. IF AVAILABLE: Check 'Share system audio' to record others.\n" +
+        "(Note: Some systems like macOS may not support system audio capture natively)\n\n" +
         "Click OK to proceed."
       );
       
@@ -67,33 +67,50 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
       const destination = ctx.createMediaStreamDestination();
 
       // 2. Get System Audio (via Screen Share)
-      // We request video:true because browsers require it for getDisplayMedia, but we'll ignore the video track
-      let systemStream: MediaStream;
+      // We request video:true because browsers require it for getDisplayMedia
+      let systemStream: MediaStream | null = null;
+      let hasSystemAudio = false;
+
       try {
         systemStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        
+        // Check if we actually got an audio track
+        if (systemStream.getAudioTracks().length > 0) {
+          hasSystemAudio = true;
+          // Mix System Audio
+          const systemSource = ctx.createMediaStreamSource(systemStream);
+          const systemGain = ctx.createGain();
+          systemGain.gain.value = 1.0; 
+          systemSource.connect(systemGain).connect(destination);
+        } else {
+          // Fallback Confirmation
+          const proceed = window.confirm(
+            "System Audio (Speaker) was NOT detected.\n\n" +
+            "The 'Share system audio' option was missing or unchecked.\n" +
+            "Do you want to continue recording ONLY your Microphone?"
+          );
+          
+          if (!proceed) {
+             // Stop the video track we just started
+             systemStream.getTracks().forEach(t => t.stop());
+             setIsPreparing(false);
+             return;
+          }
+          // Continue with systemStream (video only) just to keep the recording session alive, 
+          // or we can stop it if we only want mic. 
+          // Let's keep it but stop video track to hide the banner if possible, though stopping track usually stops stream.
+          // We'll keep it active but not mixed.
+        }
       } catch (err) {
-        // User clicked Cancel on the screen share dialog
+        // User clicked Cancel on screen share
         setIsPreparing(false);
         return;
-      }
-
-      // CRITICAL CHECK: Did user actually share audio?
-      if (systemStream.getAudioTracks().length === 0) {
-        // Stop the stream immediately to clear the "Sharing Screen" banner
-        systemStream.getTracks().forEach(t => t.stop());
-        throw new Error("SYSTEM_AUDIO_MISSING");
       }
 
       // 3. Get Microphone Audio
       const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
       // 4. Mix Streams
-      // Add System Audio to Mix
-      const systemSource = ctx.createMediaStreamSource(systemStream);
-      const systemGain = ctx.createGain();
-      systemGain.gain.value = 1.0; // Adjust volume if needed
-      systemSource.connect(systemGain).connect(destination);
-
       // Add Mic Audio to Mix
       const micSource = ctx.createMediaStreamSource(micStream);
       const micGain = ctx.createGain();
@@ -101,7 +118,8 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
       micSource.connect(micGain).connect(destination);
 
       // Track streams for cleanup
-      streamsRef.current = [systemStream, micStream];
+      streamsRef.current = [micStream];
+      if (systemStream) streamsRef.current.push(systemStream);
 
       // 5. Setup Recorder
       const mixedStream = destination.stream;
@@ -118,7 +136,6 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
 
       recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'audio/webm' });
-        // Use a clear filename
         const filename = `meeting-recording-${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.webm`;
         const file = new File([blob], filename, { type: 'audio/webm' });
         
@@ -150,14 +167,12 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
 
     } catch (err: any) {
       console.error("Recording failed", err);
-      stopRecordingCleanup(); // Ensure we don't leave zombie streams
+      stopRecordingCleanup();
 
       let errorMsg = "Failed to start recording.";
       
-      if (err.message === "SYSTEM_AUDIO_MISSING") {
-        errorMsg = "System Audio not detected! You MUST check the 'Share system audio' box when selecting the screen.";
-      } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        errorMsg = "Permission denied. Please allow Screen Recording and Microphone access in System Settings.";
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        errorMsg = "Permission denied. Please check System Settings.";
       } else if (err.name === 'NotFoundError') {
         errorMsg = "Microphone not found.";
       }
