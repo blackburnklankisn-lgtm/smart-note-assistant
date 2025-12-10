@@ -111,10 +111,6 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     );
 
     set({ notes: updatedNotes });
-    
-    // Debounced auto-save handled by consuming component effect or we can trigger it here with debounce.
-    // For simplicity, we trigger the save action which can handle debounce or immediate save.
-    // NOTE: In App.tsx refactor, we will rely on a useEffect to debounce save based on `notes` changes.
   },
 
   addFilesToActiveNote: (files) => {
@@ -122,11 +118,20 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     const activeNote = notes.find(n => n.id === activeNoteId);
     if (!activeNote) return;
 
-    const newPreviews: ImagePreview[] = files.map(file => ({
-      file,
-      url: URL.createObjectURL(file),
-      type: file.type === 'application/pdf' ? 'pdf' : 'image'
-    }));
+    const newPreviews: ImagePreview[] = files.map(file => {
+      let type: 'image' | 'pdf' | 'audio' = 'image';
+      if (file.type === 'application/pdf') {
+        type = 'pdf';
+      } else if (file.type.startsWith('audio/')) {
+        type = 'audio';
+      }
+
+      return {
+        file,
+        url: URL.createObjectURL(file),
+        type
+      };
+    });
 
     get().updateActiveNote({ attachments: [...activeNote.attachments, ...newPreviews] });
   },
@@ -233,7 +238,6 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
         title: activeNote.title || "Smart Note " + new Date().toLocaleDateString()
       };
 
-      // Update state manually to ensure immediate consistency
       const updatedNotes = get().notes.map(n => n.id === activeNoteId ? updatedNote : n);
       set({ notes: updatedNotes });
       
@@ -346,7 +350,6 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
       timestamp: Date.now()
     };
 
-    // Update locally first
     const updatedHistory = [...activeNote.chatHistory, newUserMsg];
     get().updateActiveNote({ chatHistory: updatedHistory });
 

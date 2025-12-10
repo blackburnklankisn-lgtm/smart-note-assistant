@@ -1,10 +1,29 @@
-const { app, BrowserWindow, Tray, Menu } = require('electron');
+const { app, BrowserWindow, Tray, Menu, session, systemPreferences } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 let mainWindow = null;
 let tray = null;
 let isQuitting = false; // 标记是否是通过托盘菜单点击了“退出”
+
+async function checkMediaAccess() {
+  if (process.platform !== 'darwin') return true;
+  
+  try {
+    const status = await systemPreferences.getMediaAccessStatus('microphone');
+    console.log("Current Microphone Access Status:", status);
+    
+    if (status === 'not-determined') {
+      const success = await systemPreferences.askForMediaAccess('microphone');
+      console.log("Microphone access requested. Result:", success);
+      return success;
+    }
+    return status === 'granted';
+  } catch (error) {
+    console.error("Could not check media access:", error);
+    return false;
+  }
+}
 
 function createWindow() {
   // 检查图标是否存在，防止报错
@@ -20,9 +39,28 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      webSecurity: false
+      webSecurity: false,
+      enableBlinkFeatures: 'RTCWebAudioMediaStream', // Ensure WebAudio is enabled
     },
   });
+
+  // --- PERMISSION HANDLING START ---
+  // Electron requires explicit approval for media access
+  mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+    const allowedPermissions = ['media', 'display-capture', 'mediaKeySystem'];
+    if (allowedPermissions.includes(permission)) {
+      callback(true); // Approve
+    } else {
+      console.log(`Denied permission request: ${permission}`);
+      callback(false);
+    }
+  });
+
+  mainWindow.webContents.session.setPermissionCheckHandler((webContents, permission) => {
+    const allowedPermissions = ['media', 'display-capture', 'mediaKeySystem'];
+    return allowedPermissions.includes(permission);
+  });
+  // --- PERMISSION HANDLING END ---
 
   // 加载打包后的页面
   // 注意：npm run build 会生成 dist 文件夹，所以这里指向 ../dist/index.html
@@ -151,7 +189,8 @@ function createTray() {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await checkMediaAccess(); // Request OS permissions on macOS
   createMenu(); // 初始化菜单
   createWindow();
   createTray();
