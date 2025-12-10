@@ -1,11 +1,14 @@
 import { GoogleGenAI } from "@google/genai";
 import { NoteRole, ChatMessage } from "../types";
+import mammoth from 'mammoth';
+import * as XLSX from 'xlsx';
+import JSZip from 'jszip';
 
 const PROMPTS = {
   autosar: `
 Role (角色设定):
 你是一名资深的 **汽车电子软件架构师 (Automotive Software Architect)** 和 **智能技术顾问**。
-你的用户是汽车电子软件工程师。你的核心任务是将用户的输入（文本、日志片段、图片、PDF规范、网页链接、**会议录音**）转化为结构化、专业的工程笔记。
+你的用户是汽车电子软件工程师。你的核心任务是将用户的输入（文本、日志片段、图片、PDF规范、网页链接、**会议录音**、**Office文档**）转化为结构化、专业的工程笔记。
 
 Domain Focus (核心领域):
 所有分析必须严格聚焦于以下领域：
@@ -21,10 +24,10 @@ Processing Workflow (处理流程):
 1. **输入解析与意图识别**:
    - 识别用户提供的 Log 报错、代码片段 (.c/.h/arxml) 或规范文档引用。
    - **会议语音分析**: 如果输入包含音频文件，请转录并总结会议中的技术讨论要点、决策结论和待办事项 (Action Items)。
+   - **文档内容提取**: 如果包含 Word/Excel/PPT 文档内容，请仔细阅读提取的文本并整合到笔记中。
    - **URL 解析**: 输入文本中可能包含标记为 \`(Link URL: https://...)\` 的网页链接。请务必使用工具访问这些链接，提取内容进行辅助分析。
 
 2. **标准化分类 (Standardized Classification)**:
-   在分析问题时，使用以下分类标签：
    - **[Layer]**: Application / RTE / BSW / MCAL / Hardware
    - **[Module]**: ComStack, DiagStack, MemStack, OS...
    - **[Standard]**: ISO26262, ISO14229, Autosar SWS...
@@ -45,9 +48,9 @@ Output Format (输出格式):
 * **架构层级**: ...
 * **涉及模块**: ...
 
-## 🚨 问题诊断 / 会议纪要 (Diagnosis / Meeting Minutes)
-* **现象描述 / 讨论议题**: ...
-* **技术背景 / 观点详情**: ...
+## 🚨 问题诊断 / 文档分析 (Analysis)
+* **现象描述 / 文档要点**: ...
+* **技术背景 / 详细内容**: ...
 
 ## 🕵️ 根本原因 / 决策结论 (Root Causes / Decisions)
 1. ...
@@ -60,7 +63,7 @@ Output Format (输出格式):
 
   notebooklm: `
 Role (角色设定):
-你是一名类似 **Google NotebookLM** 的智能文档分析助手。你的核心任务是对用户上传的全部内容（文本、图片、PDF文档、**音频录音**）进行深度阅读、综合分析和精准总结。
+你是一名类似 **Google NotebookLM** 的智能文档分析助手。你的核心任务是对用户上传的全部内容（文本、图片、PDF文档、**音频录音**、**Office文档**）进行深度阅读、综合分析和精准总结。
 
 Strict Constraints (严格限制):
 1. **完全依据来源 (Grounding)**: 所有的回答、总结、洞察必须**完全基于用户本次提供的输入资源**。
@@ -80,7 +83,7 @@ Role (角色设定):
 
 Tasks (任务):
 1. **内容重组**: 将用户碎片化、口语化、杂乱的输入文本整理成结构清晰、逻辑严密的专业笔记。
-2. **音频转录与总结**: 如果包含音频文件，请提取关键对话内容，生成会议纪要。
+2. **文档/音频解析**: 提取用户上传的文档（Word/Excel/PPT/PDF）或音频文件的关键信息。
 3. **格式优化**: 充分利用 Markdown 的标题、列表、加粗、代码块等特性，提升可读性。
 4. **智能纠错**: 修正明显的拼写和语法错误，润色语言，使其更加流畅专业。
 5. **要点提炼**: 自动识别并提取内容中的 Action Items (待办事项)、Key Decisions (关键决策) 或 Core Concepts (核心概念)。
@@ -141,6 +144,102 @@ export const getApiKey = (): string | undefined => {
   return undefined;
 };
 
+// --- FILE PARSING UTILITIES ---
+
+async function parseDocx(file: File): Promise<string> {
+  try {
+    // Mammoth only supports .docx (XML based). .doc is binary OLE.
+    if (file.name.toLowerCase().endsWith('.doc')) {
+      return `\n\n--- FILE: ${file.name} ---\n[Warning: Legacy binary .doc format is not supported for text extraction in this environment. Please convert to .docx]\n--- END OF FILE ---\n\n`;
+    }
+
+    const arrayBuffer = await file.arrayBuffer();
+    // Validate simple signature check if possible, but mammoth usually throws
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    return `\n\n--- START OF FILE: ${file.name} (DOCX) ---\n${result.value}\n--- END OF FILE ---\n\n`;
+  } catch (error: any) {
+    console.warn("DOCX Parsing Error:", error);
+    return `\n\n--- FILE: ${file.name} ---\n[Error extracting text from DOCX: ${error.message}. Is this a valid .docx file?]\n--- END OF FILE ---\n\n`;
+  }
+}
+
+async function parseXlsx(file: File): Promise<string> {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const workbook = XLSX.read(arrayBuffer);
+    let text = `\n\n--- START OF FILE: ${file.name} (EXCEL) ---\n`;
+    
+    workbook.SheetNames.forEach(sheetName => {
+      const sheet = workbook.Sheets[sheetName];
+      const csv = XLSX.utils.sheet_to_csv(sheet);
+      if (csv && csv.trim().length > 0) {
+         text += `\n[Sheet: ${sheetName}]\n${csv}\n`;
+      }
+    });
+    text += `--- END OF FILE ---\n\n`;
+    return text;
+  } catch (error: any) {
+    console.warn("Excel Parsing Error:", error);
+    return `\n\n--- FILE: ${file.name} ---\n[Error extracting text from Excel: ${error.message}]\n--- END OF FILE ---\n\n`;
+  }
+}
+
+async function parsePptx(file: File): Promise<string> {
+  try {
+    if (file.name.toLowerCase().endsWith('.ppt')) {
+        return `\n\n--- FILE: ${file.name} ---\n[Warning: Legacy binary .ppt format is not supported for text extraction. Please convert to .pptx]\n--- END OF FILE ---\n\n`;
+    }
+
+    // PPTX is a zip file. We extract slide XMLs and get text.
+    // This is a naive extraction but works for basic text content.
+    const arrayBuffer = await file.arrayBuffer();
+    const zip = await JSZip.loadAsync(arrayBuffer);
+    let text = `\n\n--- START OF FILE: ${file.name} (PPTX) ---\n`;
+    
+    // Find all slide files
+    const slideFiles = Object.keys(zip.files).filter(name => name.startsWith('ppt/slides/slide') && name.endsWith('.xml'));
+    
+    if (slideFiles.length === 0) {
+        return `\n\n--- START OF FILE: ${file.name} (PPTX) ---\n[No slides found or invalid PPTX structure]\n--- END OF FILE ---\n\n`;
+    }
+
+    // Sort them numerically (slide1, slide2, etc.)
+    slideFiles.sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, '') || '0');
+      const numB = parseInt(b.replace(/\D/g, '') || '0');
+      return numA - numB;
+    });
+
+    for (const fileName of slideFiles) {
+      const xmlContent = await zip.files[fileName].async('string');
+      // Simple regex to extract text within <a:t> tags
+      const slideTextMatch = xmlContent.match(/<a:t[^>]*>(.*?)<\/a:t>/g);
+      if (slideTextMatch) {
+        const slideText = slideTextMatch.map(t => t.replace(/<[^>]+>/g, '')).join(' ');
+        if (slideText.trim()) {
+          const slideNum = fileName.replace(/\D/g, '');
+          text += `\n[Slide ${slideNum}]: ${slideText}\n`;
+        }
+      }
+    }
+
+    text += `--- END OF FILE ---\n\n`;
+    return text;
+  } catch (error: any) {
+    console.warn("PPTX Parsing Error:", error);
+    return `\n\n--- FILE: ${file.name} ---\n[Error extracting text from PPTX: ${error.message}. Is this a valid .pptx file?]\n--- END OF FILE ---\n\n`;
+  }
+}
+
+async function parseTxt(file: File): Promise<string> {
+  try {
+    const text = await file.text();
+    return `\n\n--- START OF FILE: ${file.name} (TXT) ---\n${text}\n--- END OF FILE ---\n\n`;
+  } catch (error: any) {
+    return `\n\n--- FILE: ${file.name} ---\n[Error reading text file: ${error.message}]\n--- END OF FILE ---\n\n`;
+  }
+}
+
 export const generateSmartNote = async (
   htmlContent: string,
   attachments: File[],
@@ -157,22 +256,52 @@ export const generateSmartNote = async (
   // 1. Parse HTML content into interleaved text and image parts
   const contentParts = await parseHtmlToContentParts(htmlContent);
 
-  // 2. Process external attachments (PDFs, Audio, Images)
-  const attachmentParts = await Promise.all(
-    attachments.map(async (file) => {
-      const base64Data = await fileToGenerativePart(file);
-      return {
-        inlineData: {
-          data: base64Data,
-          mimeType: file.type, // Works for 'audio/webm', 'audio/mp3', 'application/pdf', etc.
-        },
-      };
-    })
-  );
+  // 2. Process external attachments
+  // We need to separate "Native Parts" (Images, PDF, Audio) from "Text Extraction Parts" (Office, Txt)
+  const nativeAttachments: any[] = [];
+  let extractedTextFromDocs = "";
+
+  for (const file of attachments) {
+    const ext = file.name.split('.').pop()?.toLowerCase();
+
+    // Case 1: Native support (Image, PDF, Audio)
+    if (file.type.startsWith('image/') || file.type === 'application/pdf' || file.type.startsWith('audio/')) {
+        const base64Data = await fileToGenerativePart(file);
+        nativeAttachments.push({
+            inlineData: {
+                data: base64Data,
+                mimeType: file.type,
+            },
+        });
+    } 
+    // Case 2: Office Docs & Text (Extract text locally)
+    else if (ext === 'docx' || ext === 'doc') {
+        extractedTextFromDocs += await parseDocx(file);
+    } 
+    else if (ext === 'xlsx' || ext === 'xls') {
+        extractedTextFromDocs += await parseXlsx(file);
+    }
+    else if (ext === 'pptx' || ext === 'potx' || ext === 'ppt') {
+        extractedTextFromDocs += await parsePptx(file);
+    }
+    else if (ext === 'txt') {
+        extractedTextFromDocs += await parseTxt(file);
+    }
+  }
+
+  // 3. Assemble Final Prompt
+  // append extracted text to the first text part, or create a new one
+  if (extractedTextFromDocs) {
+    if (contentParts.length > 0 && contentParts[0].text) {
+        contentParts[0].text += extractedTextFromDocs;
+    } else {
+        contentParts.unshift({ text: extractedTextFromDocs });
+    }
+  }
 
   const finalParts = [
     ...contentParts,
-    ...attachmentParts
+    ...nativeAttachments
   ];
 
   // Fallback if empty
@@ -241,24 +370,41 @@ export const chatWithNote = async (
 
   // 1. Prepare Context (Note Content + Attachments)
   const contentParts = await parseHtmlToContentParts(noteHtml);
-  const attachmentParts = await Promise.all(
-    noteAttachments.map(async (file) => {
-      const base64Data = await fileToGenerativePart(file);
-      return {
-        inlineData: {
-          data: base64Data,
-          mimeType: file.type,
-        },
-      };
-    })
-  );
+  
+  const nativeAttachments: any[] = [];
+  let extractedTextFromDocs = "";
+
+  for (const file of noteAttachments) {
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    
+    if (file.type.startsWith('image/') || file.type === 'application/pdf' || file.type.startsWith('audio/')) {
+        const base64Data = await fileToGenerativePart(file);
+        nativeAttachments.push({
+            inlineData: {
+                data: base64Data,
+                mimeType: file.type,
+            },
+        });
+    } 
+    else if (ext === 'docx' || ext === 'doc') extractedTextFromDocs += await parseDocx(file);
+    else if (ext === 'xlsx' || ext === 'xls') extractedTextFromDocs += await parseXlsx(file);
+    else if (ext === 'pptx' || ext === 'potx' || ext === 'ppt') extractedTextFromDocs += await parsePptx(file);
+    else if (ext === 'txt') extractedTextFromDocs += await parseTxt(file);
+  }
+
+  // Inject extracted text
+  if (extractedTextFromDocs) {
+      const intro = `\nBelow is text extracted from attached documents:\n${extractedTextFromDocs}\n`;
+      // Insert before other content parts
+      contentParts.unshift({ text: intro });
+  }
 
   const contextMessage = {
     role: 'user',
     parts: [
       { text: `CONTEXT START\n${PROMPTS[role]}\n\nHere is the current content of the note (and attachments) you are discussing:\n` },
       ...contentParts,
-      ...attachmentParts,
+      ...nativeAttachments,
       { text: "\nCONTEXT END\n\nPlease answer the following questions based on the context above." }
     ]
   };

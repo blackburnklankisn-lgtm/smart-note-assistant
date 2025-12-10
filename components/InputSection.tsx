@@ -3,7 +3,7 @@ import {
   X, Image as ImageIcon, Loader2, Sparkles, 
   Paperclip, File as FileIcon, Bold, Italic, Underline, 
   Save, Palette, Highlighter, ChevronDown,
-  Type, ALargeSmall, Link as LinkIcon, UserCog, MessageCircleQuestion, Music
+  Type, ALargeSmall, Link as LinkIcon, UserCog, MessageCircleQuestion, Music, FileText, FileSpreadsheet, Presentation
 } from 'lucide-react';
 import { ImagePreview, AppStatus, NoteRole } from '../types';
 import { AudioRecorder } from './AudioRecorder';
@@ -76,6 +76,16 @@ const FONT_SIZES = [
   { label: '48', value: '7' },
   { label: '60', value: '7' },
   { label: '72', value: '7' },
+];
+
+const ALLOWED_EXTENSIONS = [
+  '.jpg', '.jpeg', '.png', '.gif', '.webp',
+  '.pdf',
+  '.mp3', '.webm', '.wav',
+  '.doc', '.docx',
+  '.xls', '.xlsx',
+  '.ppt', '.pptx', '.potx',
+  '.txt'
 ];
 
 export const InputSection: React.FC<InputSectionProps> = ({ 
@@ -407,13 +417,25 @@ export const InputSection: React.FC<InputSectionProps> = ({
   const handleAttachmentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const files = Array.from(e.target.files) as File[];
-      onAddFiles(files);
       
-      files.forEach(file => {
-        if (file.type === 'application/pdf') {
-          insertPdfPlaceholder(file);
-        }
+      // Validate extensions
+      const validFiles = files.filter(f => {
+         const ext = '.' + f.name.split('.').pop()?.toLowerCase();
+         return ALLOWED_EXTENSIONS.includes(ext) || f.type.startsWith('image/') || f.type.startsWith('audio/');
       });
+
+      if (validFiles.length !== files.length) {
+         alert("Some files have unsupported formats and were skipped.");
+      }
+
+      if (validFiles.length > 0) {
+        onAddFiles(validFiles);
+        validFiles.forEach(file => {
+          if (file.type === 'application/pdf') {
+            insertPdfPlaceholder(file);
+          }
+        });
+      }
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -428,6 +450,25 @@ export const InputSection: React.FC<InputSectionProps> = ({
   };
 
   const isProcessing = status === AppStatus.PROCESSING;
+
+  const renderPreviewIcon = (type: ImagePreview['type']) => {
+    switch (type) {
+        case 'pdf': 
+            return <div className="text-red-500"><FileIcon size={24} /><span className="text-[10px] uppercase font-bold mt-1 block">PDF</span></div>;
+        case 'audio':
+            return <div className="text-indigo-500"><Music size={24} /><span className="text-[10px] uppercase font-bold mt-1 block">Audio</span></div>;
+        case 'doc':
+            return <div className="text-blue-600"><FileText size={24} /><span className="text-[10px] uppercase font-bold mt-1 block">DOC</span></div>;
+        case 'sheet':
+            return <div className="text-green-600"><FileSpreadsheet size={24} /><span className="text-[10px] uppercase font-bold mt-1 block">XLS</span></div>;
+        case 'slide':
+            return <div className="text-orange-500"><Presentation size={24} /><span className="text-[10px] uppercase font-bold mt-1 block">PPT</span></div>;
+        case 'text':
+            return <div className="text-slate-500"><FileText size={24} /><span className="text-[10px] uppercase font-bold mt-1 block">TXT</span></div>;
+        default:
+            return null;
+    }
+  };
 
   return (
     <div 
@@ -569,11 +610,12 @@ export const InputSection: React.FC<InputSectionProps> = ({
           <div className="flex flex-wrap gap-3">
             {previews.map((preview, index) => (
               <div key={index} className="relative group animate-fade-in-up">
-                {preview.type === 'pdf' ? (
-                  <div className="w-16 h-16 bg-red-50 border border-red-100 rounded-lg flex flex-col items-center justify-center text-red-500 shadow-sm">
-                    <FileIcon size={24} />
-                    <span className="text-[10px] uppercase font-bold mt-1">PDF</span>
-                  </div>
+                {preview.type === 'image' ? (
+                  <img
+                    src={preview.url}
+                    alt="attachment"
+                    className="w-16 h-16 object-cover rounded-lg border border-slate-200 shadow-sm bg-white"
+                  />
                 ) : preview.type === 'audio' ? (
                   <div className="h-16 bg-indigo-50 border border-indigo-100 rounded-lg flex items-center justify-center px-2 shadow-sm min-w-[120px]">
                       <div className="flex flex-col items-center justify-center w-full">
@@ -590,12 +632,17 @@ export const InputSection: React.FC<InputSectionProps> = ({
                       </div>
                   </div>
                 ) : (
-                  <img
-                    src={preview.url}
-                    alt="attachment"
-                    className="w-16 h-16 object-cover rounded-lg border border-slate-200 shadow-sm bg-white"
-                  />
+                  // General Document Preview
+                  <div className={`w-16 h-16 border rounded-lg flex flex-col items-center justify-center shadow-sm 
+                     ${preview.type === 'pdf' ? 'bg-red-50 border-red-100 text-red-500' : 
+                       preview.type === 'doc' ? 'bg-blue-50 border-blue-100 text-blue-600' :
+                       preview.type === 'sheet' ? 'bg-green-50 border-green-100 text-green-600' :
+                       preview.type === 'slide' ? 'bg-orange-50 border-orange-100 text-orange-500' :
+                       'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                     {renderPreviewIcon(preview.type)}
+                  </div>
                 )}
+
                 <button
                   onClick={() => onRemoveFile(index)}
                   className="absolute -top-2 -right-2 bg-white text-slate-400 hover:text-red-500 rounded-full p-1 shadow-md border border-slate-100 opacity-0 group-hover:opacity-100 transition-all scale-75 hover:scale-100 z-10"
@@ -623,7 +670,7 @@ export const InputSection: React.FC<InputSectionProps> = ({
               onChange={handleAttachmentChange}
               className="hidden"
               multiple
-              accept="image/*,.pdf,audio/*"
+              accept={ALLOWED_EXTENSIONS.join(',')}
             />
             
             <AudioRecorder 
@@ -632,7 +679,7 @@ export const InputSection: React.FC<InputSectionProps> = ({
             />
 
             <div className="text-xs text-slate-400 hidden sm:block ml-2">
-              Images, PDF & Audio
+              All Files
             </div>
           </div>
 
@@ -648,7 +695,7 @@ export const InputSection: React.FC<InputSectionProps> = ({
                  className="appearance-none pl-10 pr-8 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none shadow-sm cursor-pointer hover:bg-slate-50 transition-colors w-full sm:w-auto"
                >
                  <option value="autosar">AutoSAR Expert</option>
-                 <option value="notebooklm">NotebookLM (Doc/Audio)</option>
+                 <option value="notebooklm">NotebookLM (Docs)</option>
                  <option value="general">General Smart Note</option>
                </select>
                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">

@@ -11,7 +11,7 @@ export interface NoteResult {
 export interface ImagePreview {
   file: File;
   url: string;
-  type: 'image' | 'pdf' | 'audio';
+  type: 'image' | 'pdf' | 'audio' | 'doc' | 'sheet' | 'slide' | 'text';
 }
 
 export enum AppStatus {

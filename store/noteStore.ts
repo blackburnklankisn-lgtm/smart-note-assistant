@@ -65,14 +65,14 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     if (savedNotes && savedNotes.length > 0) {
       set({ 
         notes: savedNotes, 
-        activeNoteId: savedNotes[0].id,
+        activeNoteId: savedNotes[0].id, 
         isStorageInitialized: true 
       });
     } else {
       const newNote = createNewNote();
       set({ 
         notes: [newNote], 
-        activeNoteId: newNote.id,
+        activeNoteId: newNote.id, 
         isStorageInitialized: true 
       });
       await saveNotesToStorage([newNote]);
@@ -119,11 +119,22 @@ export const useNoteStore = create<NoteStore>((set, get) => ({
     if (!activeNote) return;
 
     const newPreviews: ImagePreview[] = files.map(file => {
-      let type: 'image' | 'pdf' | 'audio' = 'image';
+      let type: 'image' | 'pdf' | 'audio' | 'doc' | 'sheet' | 'slide' | 'text' = 'image';
+      
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      
       if (file.type === 'application/pdf') {
         type = 'pdf';
       } else if (file.type.startsWith('audio/')) {
         type = 'audio';
+      } else if (ext === 'doc' || ext === 'docx') {
+        type = 'doc';
+      } else if (ext === 'xls' || ext === 'xlsx') {
+        type = 'sheet';
+      } else if (ext === 'ppt' || ext === 'pptx' || ext === 'potx') {
+        type = 'slide';
+      } else if (ext === 'txt') {
+        type = 'text';
       }
 
       return {
