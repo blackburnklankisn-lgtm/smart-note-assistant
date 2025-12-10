@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { 
   X, Image as ImageIcon, Loader2, Sparkles, 
   Paperclip, File as FileIcon, Bold, Italic, Underline, 
-  Heading1, Heading2, Save, Palette, Highlighter, ChevronDown,
+  Save, Palette, Highlighter, ChevronDown,
   Type, ALargeSmall, Link as LinkIcon, UserCog, MessageCircleQuestion, Music
 } from 'lucide-react';
 import { ImagePreview, AppStatus, NoteRole } from '../types';
@@ -516,11 +516,6 @@ export const InputSection: React.FC<InputSectionProps> = ({
 
         <div className="w-px h-5 bg-slate-200 mx-2" />
         
-        <button onClick={() => execCmd('formatBlock', 'H1')} className="p-1.5 rounded hover:bg-slate-100 text-slate-500 transition-colors" title="Heading 1"><Heading1 size={18} /></button>
-        <button onClick={() => execCmd('formatBlock', 'H2')} className="p-1.5 rounded hover:bg-slate-100 text-slate-500 transition-colors" title="Heading 2"><Heading2 size={18} /></button>
-        
-        <div className="w-px h-5 bg-slate-200 mx-2" />
-        
         <button onMouseDown={(e) => { e.preventDefault(); insertLink(); }} className="p-1.5 rounded hover:bg-slate-100 text-slate-500 transition-colors" title="Insert Link"><LinkIcon size={18} /></button>
 
         <button onClick={() => imageInsertRef.current?.click()} className="p-1.5 rounded hover:bg-slate-100 text-slate-500 transition-colors" title="Insert Image"><ImageIcon size={18} /></button>
@@ -531,24 +526,24 @@ export const InputSection: React.FC<InputSectionProps> = ({
         <div
           ref={editorRef}
           contentEditable={!isProcessing}
-          className="outline-none min-h-full px-6 py-4 prose max-w-none pb-24 text-orange-600 caret-orange-600"
+          className="outline-none min-h-full px-6 py-4 prose max-w-none pb-24 text-slate-800 caret-blue-600"
           style={{
-            '--tw-prose-body': '#ea580c',
-            '--tw-prose-headings': '#ea580c',
-            '--tw-prose-lead': '#ea580c',
+            '--tw-prose-body': '#334155',
+            '--tw-prose-headings': '#1e293b',
+            '--tw-prose-lead': '#475569',
             '--tw-prose-links': '#2563eb',
-            '--tw-prose-bold': '#ea580c',
-            '--tw-prose-counters': '#ea580c',
-            '--tw-prose-bullets': '#ea580c',
-            '--tw-prose-hr': '#cbd5e1',
-            '--tw-prose-quotes': '#ea580c',
-            '--tw-prose-quote-borders': '#ea580c',
-            '--tw-prose-captions': '#ea580c',
-            '--tw-prose-code': '#ea580c',
-            '--tw-prose-pre-code': '#ea580c',
+            '--tw-prose-bold': '#1e293b',
+            '--tw-prose-counters': '#64748b',
+            '--tw-prose-bullets': '#334155',
+            '--tw-prose-hr': '#e2e8f0',
+            '--tw-prose-quotes': '#1e293b',
+            '--tw-prose-quote-borders': '#e2e8f0',
+            '--tw-prose-captions': '#64748b',
+            '--tw-prose-code': '#1e293b',
+            '--tw-prose-pre-code': '#e2e8f0',
             '--tw-prose-pre-bg': '#1e293b',
-            '--tw-prose-th-borders': '#ea580c',
-            '--tw-prose-td-borders': '#ea580c',
+            '--tw-prose-th-borders': '#e2e8f0',
+            '--tw-prose-td-borders': '#e2e8f0',
           } as React.CSSProperties}
           onInput={handleInput}
           onKeyDown={(e) => {
