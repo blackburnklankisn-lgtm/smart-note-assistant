@@ -9,6 +9,7 @@ interface ChatPanelProps {
   onSendMessage: (text: string) => void;
   onClose: () => void;
   onClearHistory: () => void;
+  draftMessage?: string; // New prop for pre-filling input
 }
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({ 
@@ -16,10 +17,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   isLoading, 
   onSendMessage, 
   onClose,
-  onClearHistory
+  onClearHistory,
+  draftMessage
 }) => {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -28,6 +31,15 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   useEffect(() => {
     scrollToBottom();
   }, [history, isLoading]);
+
+  // Handle incoming draft messages (e.g. from text selection)
+  useEffect(() => {
+    if (draftMessage) {
+      setInput(draftMessage);
+      // Focus the input to let user type immediately
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [draftMessage]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,6 +138,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       <form onSubmit={handleSubmit} className="p-4 border-t border-slate-100 bg-white">
         <div className="relative flex items-center">
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}

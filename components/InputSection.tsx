@@ -3,7 +3,7 @@ import {
   X, Image as ImageIcon, Loader2, Sparkles, 
   Paperclip, File as FileIcon, Bold, Italic, Underline, 
   Heading1, Heading2, Save, Palette, Highlighter, ChevronDown,
-  Type, ALargeSmall, Link as LinkIcon, UserCog
+  Type, ALargeSmall, Link as LinkIcon, UserCog, MessageCircleQuestion
 } from 'lucide-react';
 import { ImagePreview, AppStatus, NoteRole } from '../types';
 
@@ -21,6 +21,7 @@ interface InputSectionProps {
   onRemoveFile: (index: number) => void;
   onGenerate: () => void;
   onSave: () => void;
+  onChatSelection?: (text: string) => void; // New prop for chat with selection
 }
 
 // Predefined colors for Text and Highlights
@@ -90,7 +91,8 @@ export const InputSection: React.FC<InputSectionProps> = ({
   onAddFiles,
   onRemoveFile,
   onGenerate,
-  onSave
+  onSave,
+  onChatSelection
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInsertRef = useRef<HTMLInputElement>(null);
@@ -109,6 +111,9 @@ export const InputSection: React.FC<InputSectionProps> = ({
   const [resizingSide, setResizingSide] = useState<'left' | 'right' | null>(null);
   const resizeStartX = useRef<number>(0);
   const resizeStartWidth = useRef<number>(0);
+
+  // State for Selection Popover
+  const [selectionPopover, setSelectionPopover] = useState<{x: number, y: number, text: string} | null>(null);
 
   // Helper to remove temporary highlight tags before saving/processing
   const removeHighlights = (html: string) => {
@@ -133,6 +138,53 @@ export const InputSection: React.FC<InputSectionProps> = ({
     
     return cleanHtml;
   };
+
+  // Selection Change Handler to show/hide popover
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      // Small timeout to let selection settle (e.g. double click)
+      setTimeout(() => {
+        const selection = window.getSelection();
+        
+        // Validation: Must have selection, must be within our editor
+        if (!selection || selection.isCollapsed || !editorRef.current?.contains(selection.anchorNode)) {
+          setSelectionPopover(null);
+          return;
+        }
+
+        const text = selection.toString().trim();
+        if (text.length > 0) {
+          // Get position
+          try {
+            const range = selection.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            
+            // Validate rect (sometimes it's 0 if invisible)
+            if (rect.width > 0 && rect.height > 0) {
+              setSelectionPopover({
+                x: rect.left + rect.width / 2,
+                y: rect.top - 45, // Position above the selection
+                text: text
+              });
+            }
+          } catch (e) {
+            setSelectionPopover(null);
+          }
+        } else {
+          setSelectionPopover(null);
+        }
+      }, 10);
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    // Also listen to scroll to update/hide popover
+    window.addEventListener('scroll', handleSelectionChange, true);
+    
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+      window.removeEventListener('scroll', handleSelectionChange, true);
+    };
+  }, []);
   
   // Close menus when clicking outside
   useEffect(() => {
@@ -418,6 +470,17 @@ export const InputSection: React.FC<InputSectionProps> = ({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleFloatingChatClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (selectionPopover && onChatSelection) {
+      onChatSelection(selectionPopover.text);
+      setSelectionPopover(null); // Hide after click
+      // Deselect text visually to be clean (optional)
+      // window.getSelection()?.removeAllRanges();
+    }
+  };
+
   const isProcessing = status === AppStatus.PROCESSING;
 
   return (
@@ -674,7 +737,26 @@ export const InputSection: React.FC<InputSectionProps> = ({
         <div
           ref={editorRef}
           contentEditable={!isProcessing}
-          className="outline-none min-h-full px-6 py-4 prose prose-slate max-w-none pb-24"
+          className="outline-none min-h-full px-6 py-4 prose max-w-none pb-24 text-orange-600 caret-orange-600"
+          style={{
+            // Force orange defaults for standard typography elements
+            '--tw-prose-body': '#ea580c',
+            '--tw-prose-headings': '#ea580c',
+            '--tw-prose-lead': '#ea580c',
+            '--tw-prose-links': '#2563eb', // Links stay blue
+            '--tw-prose-bold': '#ea580c',
+            '--tw-prose-counters': '#ea580c',
+            '--tw-prose-bullets': '#ea580c',
+            '--tw-prose-hr': '#cbd5e1',
+            '--tw-prose-quotes': '#ea580c',
+            '--tw-prose-quote-borders': '#ea580c',
+            '--tw-prose-captions': '#ea580c',
+            '--tw-prose-code': '#ea580c',
+            '--tw-prose-pre-code': '#ea580c',
+            '--tw-prose-pre-bg': '#1e293b',
+            '--tw-prose-th-borders': '#ea580c',
+            '--tw-prose-td-borders': '#ea580c',
+          } as React.CSSProperties}
           onInput={handleInput}
           onKeyDown={(e) => {
             if (e.key === 'Tab') {
@@ -795,6 +877,27 @@ export const InputSection: React.FC<InputSectionProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Floating Chat Button for Selection */}
+      {selectionPopover && (
+        <div 
+          className="fixed z-50 animate-in zoom-in-95 duration-200"
+          style={{ 
+            left: selectionPopover.x, 
+            top: selectionPopover.y,
+            transform: 'translateX(-50%)'
+          }}
+        >
+          <button
+            onClick={handleFloatingChatClick}
+            className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 text-white rounded-lg shadow-lg hover:bg-slate-700 hover:scale-105 transition-all text-xs font-medium"
+          >
+            <MessageCircleQuestion size={14} className="text-blue-300" />
+            <span>Ask AI</span>
+            <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900 absolute top-full left-1/2 -translate-x-1/2"></div>
+          </button>
+        </div>
+      )}
 
       {/* Left Resize Handle */}
       <div

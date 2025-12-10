@@ -12,6 +12,27 @@ import {
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
+// CSS variables to reset AI content to standard black/slate colors, 
+// overriding the orange defaults of the editor.
+const RESET_AI_STYLE = `
+  color: #1e293b; 
+  --tw-prose-body: #334155; 
+  --tw-prose-headings: #1e293b; 
+  --tw-prose-lead: #475569; 
+  --tw-prose-bold: #1e293b; 
+  --tw-prose-counters: #64748b; 
+  --tw-prose-bullets: #334155; 
+  --tw-prose-hr: #e2e8f0; 
+  --tw-prose-quotes: #1e293b; 
+  --tw-prose-quote-borders: #e2e8f0; 
+  --tw-prose-captions: #64748b; 
+  --tw-prose-code: #1e293b; 
+  --tw-prose-pre-code: #e2e8f0; 
+  --tw-prose-pre-bg: #1e293b; 
+  --tw-prose-th-borders: #e2e8f0; 
+  --tw-prose-td-borders: #e2e8f0;
+`.replace(/\n/g, ' ');
+
 const createNewNote = (title: string = ''): NoteSession => {
   const now = new Date();
   const dateStr = now.getFullYear() + '-' + 
@@ -56,6 +77,7 @@ const App: React.FC = () => {
   // Chat Panel State
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [chatDraft, setChatDraft] = useState<string>(''); // For pre-filling chat from selection
 
   // Resizable Sidebar State
   const [sidebarWidth, setSidebarWidth] = useState(288); // Default 288px (w-72)
@@ -264,6 +286,9 @@ const App: React.FC = () => {
       
       const aiHtml = markdownToHtml(markdown);
       
+      // Wrap in black color reset style
+      const styledAiHtml = `<div style="${RESET_AI_STYLE}">${aiHtml}</div>`;
+
       // Update the note with the result
       setNotes(prev => prev.map(n => {
         if (n.id === summaryNote.id) {
@@ -272,7 +297,7 @@ const App: React.FC = () => {
             result: { markdown, timestamp: Date.now() },
             status: AppStatus.SUCCESS,
             // Replace inputText entirely with the AI summary
-            inputText: aiHtml
+            inputText: styledAiHtml
           };
         }
         return n;
@@ -419,7 +444,11 @@ const App: React.FC = () => {
       // Append to current text with a separator and timestamp versioning
       const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const separator = `<br/><br/><hr style="margin: 2em 0; border: 0; border-top: 2px dashed #e2e8f0;"/><h2 style="color: #2563eb; font-size: 1.25em;">✨ Smart Note Update (${timestamp})</h2><br/>`;
-      const newContent = activeNote.inputText + separator + aiHtml;
+      
+      // Wrap in black color reset style
+      const styledAiHtml = `<div style="${RESET_AI_STYLE}">${aiHtml}</div>`;
+      
+      const newContent = activeNote.inputText + separator + styledAiHtml;
 
       const updatedNote = {
         ...activeNote,
@@ -504,6 +533,12 @@ const App: React.FC = () => {
     if (confirm("Clear chat history?")) {
         updateActiveNote({ chatHistory: [] });
     }
+  };
+
+  const handleChatWithSelection = (text: string) => {
+    setIsChatOpen(true);
+    // Add quoted format
+    setChatDraft(`> ${text}\n\n`);
   };
 
   const handleAddFiles = (newFiles: File[]) => {
@@ -740,6 +775,7 @@ const App: React.FC = () => {
                  onRemoveFile={handleRemoveFile}
                  onGenerate={handleGenerate}
                  onSave={handleManualSave}
+                 onChatSelection={handleChatWithSelection}
                />
                
                {activeNote.error && (
@@ -763,6 +799,7 @@ const App: React.FC = () => {
                  onSendMessage={handleSendChatMessage}
                  onClose={() => setIsChatOpen(false)}
                  onClearHistory={handleClearChat}
+                 draftMessage={chatDraft}
                />
             </div>
           )}
