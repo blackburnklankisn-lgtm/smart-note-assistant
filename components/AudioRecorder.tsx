@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Square, Download, MonitorSpeaker, Loader2, AlertCircle } from 'lucide-react';
+import { Mic, Square, Loader2, AlertCircle, MonitorSpeaker } from 'lucide-react';
 
 interface AudioRecorderProps {
   onRecordingComplete: (file: File) => void;
@@ -14,7 +14,7 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const streamsRef = useRef<MediaStream[]>([]); // Keep track of all streams to stop them later
   const timerRef = useRef<number | null>(null);
 
   // Clean up on unmount
@@ -27,10 +27,13 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
   const stopRecordingCleanup = () => {
     if (timerRef.current) clearInterval(timerRef.current);
     
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-    }
+    // Stop all tracked streams (Mic and System)
+    streamsRef.current.forEach(stream => {
+      stream.getTracks().forEach(track => track.stop());
+    });
+    streamsRef.current = [];
     
+    // Close Audio Context
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
       audioContextRef.current.close();
     }
@@ -42,55 +45,66 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
   const startRecording = async () => {
     setIsPreparing(true);
     setError(null);
+    
     try {
-      // 1. Create Audio Context
+      // 1. User Guidance Alert
+      // We must explain this because "Screen Share" is the only way to get System Audio in Web/Electron
+      const confirmed = window.confirm(
+        "To record the meeting (including what others say), you must:\n\n" +
+        "1. Select the 'Entire Screen' tab in the next popup.\n" +
+        "2. IMPORTANT: Check the 'Share system audio' box at the bottom.\n\n" +
+        "Click OK to proceed."
+      );
+      
+      if (!confirmed) {
+        setIsPreparing(false);
+        return;
+      }
+
       const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
       const ctx = new AudioContext();
       audioContextRef.current = ctx;
-
       const destination = ctx.createMediaStreamDestination();
-      
-      // 2. Get Microphone Stream
-      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const micSource = ctx.createMediaStreamSource(micStream);
-      micSource.connect(destination);
 
-      // 3. Optional: Get System/Screen Audio (Ask User)
-      // Note: getDisplayMedia audio capture varies by OS/Browser. 
-      // On Chrome/Edge it usually works if "Share Audio" is checked in the dialog.
-      let systemStream: MediaStream | null = null;
+      // 2. Get System Audio (via Screen Share)
+      // We request video:true because browsers require it for getDisplayMedia, but we'll ignore the video track
+      let systemStream: MediaStream;
       try {
-        // We ask for video: true because getDisplayMedia requires it, but we ignore the video track.
-        // We explicitly request audio.
         systemStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-        
-        // If user shared audio, mix it in
-        if (systemStream.getAudioTracks().length > 0) {
-            const systemSource = ctx.createMediaStreamSource(systemStream);
-            systemSource.connect(destination);
-        } else {
-            // User didn't share system audio, or OS didn't support it.
-            // We just proceed with mic only, but maybe notify?
-            console.log("No system audio track found. Proceeding with Mic only.");
-        }
       } catch (err) {
-        console.log("System audio selection cancelled or failed. Proceeding with Mic only.", err);
-        // Do not block recording if user cancels screen share
+        // User clicked Cancel on the screen share dialog
+        setIsPreparing(false);
+        return;
       }
 
-      // 4. Start Recorder on the mixed stream
+      // CRITICAL CHECK: Did user actually share audio?
+      if (systemStream.getAudioTracks().length === 0) {
+        // Stop the stream immediately to clear the "Sharing Screen" banner
+        systemStream.getTracks().forEach(t => t.stop());
+        throw new Error("SYSTEM_AUDIO_MISSING");
+      }
+
+      // 3. Get Microphone Audio
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // 4. Mix Streams
+      // Add System Audio to Mix
+      const systemSource = ctx.createMediaStreamSource(systemStream);
+      const systemGain = ctx.createGain();
+      systemGain.gain.value = 1.0; // Adjust volume if needed
+      systemSource.connect(systemGain).connect(destination);
+
+      // Add Mic Audio to Mix
+      const micSource = ctx.createMediaStreamSource(micStream);
+      const micGain = ctx.createGain();
+      micGain.gain.value = 1.0;
+      micSource.connect(micGain).connect(destination);
+
+      // Track streams for cleanup
+      streamsRef.current = [systemStream, micStream];
+
+      // 5. Setup Recorder
       const mixedStream = destination.stream;
-      streamRef.current = mixedStream; // Keep ref to stop later (though we really need to stop source streams)
-
-      // Important: We need to keep track of original source streams to stop hardware lights
-      const allTracks = [
-        ...micStream.getTracks(),
-        ...(systemStream ? systemStream.getTracks() : [])
-      ];
-
-      // Override the mixed stream stop method to stop all source tracks
-      const originalStop = mixedStream.stop; // It might not have stop, but tracks do
-      
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
         ? 'audio/webm;codecs=opus' 
         : 'audio/webm';
@@ -104,24 +118,25 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
 
       recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'audio/webm' });
-        const file = new File([blob], `meeting-recording-${Date.now()}.webm`, { type: 'audio/webm' });
+        // Use a clear filename
+        const filename = `meeting-recording-${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.webm`;
+        const file = new File([blob], filename, { type: 'audio/webm' });
         
-        // 1. Trigger Download (Save to Local Disk)
+        // Auto Download
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = file.name;
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        // 2. Pass to App
+        // Callback to App
         onRecordingComplete(file);
 
-        // 3. Cleanup Tracks
-        allTracks.forEach(track => track.stop());
-        ctx.close();
+        // Full Cleanup
+        stopRecordingCleanup();
       };
 
       recorder.start();
@@ -135,14 +150,16 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
 
     } catch (err: any) {
       console.error("Recording failed", err);
+      stopRecordingCleanup(); // Ensure we don't leave zombie streams
+
       let errorMsg = "Failed to start recording.";
       
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        errorMsg = "Microphone access denied. Please enable it in System Settings > Privacy & Security > Microphone.";
+      if (err.message === "SYSTEM_AUDIO_MISSING") {
+        errorMsg = "System Audio not detected! You MUST check the 'Share system audio' box when selecting the screen.";
+      } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        errorMsg = "Permission denied. Please allow Screen Recording and Microphone access in System Settings.";
       } else if (err.name === 'NotFoundError') {
-        errorMsg = "No microphone found.";
-      } else if (err.message) {
-        errorMsg = `${err.name}: ${err.message}`;
+        errorMsg = "Microphone not found.";
       }
       
       setError(errorMsg);
@@ -154,9 +171,8 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
   const stopRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
-      if (timerRef.current) clearInterval(timerRef.current);
     }
-    setIsRecording(false);
+    // Cleanup happens in onstop event
   };
 
   const formatTime = (sec: number) => {
@@ -191,16 +207,20 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
            flex items-center gap-2 px-3 py-2 text-slate-600 bg-white border border-slate-200 hover:border-red-300 hover:text-red-600 rounded-lg text-sm font-medium transition-all shadow-sm
            ${disabled || isPreparing ? 'opacity-50 cursor-not-allowed' : ''}
         `}
-        title="Record Microphone & System Audio"
+        title="Record Meeting (Mic + Speaker)"
       >
-        {isPreparing ? <Loader2 size={18} className="animate-spin" /> : <Mic size={18} />}
-        <span className="hidden sm:inline">Record Audio</span>
+        {isPreparing ? <Loader2 size={18} className="animate-spin" /> : <MonitorSpeaker size={18} />}
+        <span className="hidden sm:inline">Record Meeting</span>
       </button>
+      
       {error && (
-         <div className="absolute bottom-full left-0 mb-2 w-max max-w-xs bg-red-800 text-white text-xs px-3 py-2 rounded shadow-lg flex items-start gap-2 z-50 animate-fade-in">
-           <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
-           <span>{error}</span>
-           <button onClick={() => setError(null)} className="ml-2 opacity-70 hover:opacity-100">✕</button>
+         <div className="absolute bottom-full left-0 mb-2 w-72 bg-red-900/95 backdrop-blur text-white text-xs px-4 py-3 rounded-xl shadow-xl flex items-start gap-3 z-50 animate-in slide-in-from-bottom-2">
+           <AlertCircle size={16} className="mt-0.5 flex-shrink-0 text-red-200" />
+           <div className="flex-1">
+             <p className="font-semibold mb-1">Recording Failed</p>
+             <p className="leading-relaxed opacity-90">{error}</p>
+           </div>
+           <button onClick={() => setError(null)} className="opacity-50 hover:opacity-100 p-1"><Square size={12} /></button>
          </div>
       )}
     </div>
