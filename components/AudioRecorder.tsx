@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Square, Loader2, AlertCircle, MonitorSpeaker, X } from 'lucide-react';
+import { Square, Loader2, AlertCircle, MonitorSpeaker } from 'lucide-react';
 
 interface AudioRecorderProps {
   onRecordingComplete: (file: File) => void;
@@ -11,7 +11,6 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
   const [duration, setDuration] = useState(0);
   const [isPreparing, setIsPreparing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showGuide, setShowGuide] = useState(false); // State for custom modal
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -42,13 +41,7 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
     setDuration(0);
   };
 
-  const handleInitialClick = () => {
-    setError(null);
-    setShowGuide(true);
-  };
-
   const executeRecording = async () => {
-    setShowGuide(false);
     setIsPreparing(true);
     setError(null);
     
@@ -59,15 +52,16 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
       const destination = ctx.createMediaStreamDestination();
 
       // 1. Get System Audio (via Screen Share)
-      // Browsers rely on User Activation here. Since this function is called directly
-      // from the Modal button click, permission should be granted.
+      // Since we implemented setDisplayMediaRequestHandler in main.js, this will
+      // automatically receive the main screen stream + loopback audio WITHOUT a popup.
       let systemStream: MediaStream | null = null;
       let hasSystemAudio = false;
 
       try {
-        // Request video:true required by Chrome/Electron for displayMedia, audio:true for system sound
+        // Request video:true required by Electron for displayMedia, audio:true for system sound
         systemStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
         
+        // Even with auto-select, we verify we got an audio track
         if (systemStream.getAudioTracks().length > 0) {
           hasSystemAudio = true;
           const systemSource = ctx.createMediaStreamSource(systemStream);
@@ -75,15 +69,11 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
           systemGain.gain.value = 1.0; 
           systemSource.connect(systemGain).connect(destination);
         } else {
-          // Fallback if user didn't check the box
-          // We can't use confirm here easily without breaking async flow again, 
-          // but we can just proceed with Mic Only and let user know via UI notification or console
-          console.warn("System audio track missing. Recording Mic only.");
+          console.warn("System audio track missing even with loopback. Recording Mic only.");
         }
       } catch (err) {
-        // User cancelled screen share picker
-        setIsPreparing(false);
-        return;
+        console.warn("Screen share/System audio failed or cancelled", err);
+        // Continue to record mic only if screen share fails
       }
 
       // 2. Get Microphone Audio
@@ -185,7 +175,7 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
       ) : (
         <div className="flex items-center gap-2 relative">
           <button 
-            onClick={handleInitialClick}
+            onClick={executeRecording}
             disabled={disabled || isPreparing}
             className={`
                flex items-center gap-2 px-3 py-2 text-slate-600 bg-white border border-slate-200 hover:border-red-300 hover:text-red-600 rounded-lg text-sm font-medium transition-all shadow-sm
@@ -207,45 +197,6 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({ onRecordingComplet
                <button onClick={() => setError(null)} className="opacity-50 hover:opacity-100 p-1"><Square size={12} /></button>
              </div>
           )}
-        </div>
-      )}
-
-      {/* Custom Guide Modal */}
-      {showGuide && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 border border-slate-100 relative">
-            <button 
-              onClick={() => setShowGuide(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
-            >
-              <X size={20} />
-            </button>
-            
-            <div className="flex flex-col items-center text-center">
-              <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mb-4">
-                <MonitorSpeaker size={24} />
-              </div>
-              <h3 className="text-lg font-bold text-slate-900 mb-2">Record Meeting Audio</h3>
-              
-              <div className="text-left text-sm text-slate-600 bg-slate-50 p-4 rounded-xl mb-6 space-y-3 border border-slate-100 w-full">
-                <div className="flex gap-2">
-                   <span className="bg-slate-200 text-slate-700 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">1</span>
-                   <span>Select <b>"Entire Screen"</b> tab in the next popup.</span>
-                </div>
-                <div className="flex gap-2">
-                   <span className="bg-slate-200 text-slate-700 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">2</span>
-                   <span><b>Check the box</b> at bottom-left: <br/><i>"Share system audio"</i></span>
-                </div>
-              </div>
-
-              <button 
-                onClick={executeRecording}
-                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold shadow-md shadow-indigo-200 transition-all active:scale-95"
-              >
-                Start Recording Now
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </>

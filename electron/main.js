@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, session, systemPreferences } = require('electron');
+const { app, BrowserWindow, Tray, Menu, session, systemPreferences, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -66,7 +66,7 @@ function createWindow() {
 }
 
 function setupPermissions() {
-  // Apply permission handler to the default session (Global)
+  // 1. General Permission Handler
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     const allowedPermissions = ['media', 'display-capture', 'mediaKeySystem'];
     if (allowedPermissions.includes(permission)) {
@@ -75,6 +75,21 @@ function setupPermissions() {
       console.log(`Denied permission request: ${permission}`);
       callback(false);
     }
+  });
+
+  // 2. Display Media Handler (Auto-Select Screen for System Audio)
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    desktopCapturer.getSources({ types: ['screen'] })
+      .then((sources) => {
+        // Grant access to the first screen available.
+        // The 'loopback' audio option is CRITICAL for capturing system audio on Windows 
+        // without user interaction.
+        callback({ video: sources[0], audio: 'loopback' });
+      })
+      .catch((error) => {
+        console.error("Error auto-selecting screen:", error);
+        callback(null);
+      });
   });
 
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
@@ -109,7 +124,7 @@ function createTray() {
 }
 
 app.whenReady().then(async () => {
-  setupPermissions(); // Initialize global permissions
+  setupPermissions(); // Initialize global permissions & handlers
   await checkMediaAccess();
   createMenu();
   createWindow();
