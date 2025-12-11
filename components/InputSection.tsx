@@ -354,14 +354,53 @@ export const InputSection: React.FC<InputSectionProps> = ({
     }
   };
 
-  const insertPdfPlaceholder = (file: File) => {
+  const insertAttachmentPlaceholder = (file: File) => {
     if (editorRef.current) {
       editorRef.current.focus();
-      const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #ef4444;"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+      
+      let iconColor = "#64748b"; // slate
+      let bgColor = "bg-slate-50";
+      let borderColor = "border-slate-200";
+      let textColor = "text-slate-600";
+      let iconSvg = "";
+      
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      
+      if (file.type === 'application/pdf') {
+         iconColor = "#ef4444"; // red
+         bgColor = "bg-red-50";
+         borderColor = "border-red-100";
+         textColor = "text-red-700";
+         iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+      } else if (ext === 'doc' || ext === 'docx') {
+         iconColor = "#2563eb"; // blue
+         bgColor = "bg-blue-50";
+         borderColor = "border-blue-100";
+         textColor = "text-blue-700";
+         iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>`;
+      } else if (ext === 'xls' || ext === 'xlsx') {
+         iconColor = "#16a34a"; // green
+         bgColor = "bg-green-50";
+         borderColor = "border-green-100";
+         textColor = "text-green-700";
+         iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2"/><path d="M8 17h2"/><path d="M14 13h2"/><path d="M14 17h2"/></svg>`;
+      } else if (ext === 'ppt' || ext === 'pptx' || ext === 'potx') {
+         iconColor = "#f97316"; // orange
+         bgColor = "bg-orange-50";
+         borderColor = "border-orange-100";
+         textColor = "text-orange-700";
+         iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h20"/><path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3"/><path d="M7 21l5-5 5 5"/></svg>`;
+      } else {
+         iconColor = "#64748b"; // slate
+         bgColor = "bg-slate-50";
+         borderColor = "border-slate-100";
+         textColor = "text-slate-700";
+         iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+      }
 
       const html = `
-        <span contenteditable="false" class="inline-flex items-center gap-1.5 px-3 py-1 my-1 rounded-lg bg-red-50 text-red-700 border border-red-100 text-sm font-medium select-none align-middle mx-1 shadow-sm">
-          ${svgIcon}
+        <span contenteditable="false" class="inline-flex items-center gap-1.5 px-3 py-1 my-1 rounded-lg ${bgColor} ${textColor} border ${borderColor} text-sm font-medium select-none align-middle mx-1 shadow-sm">
+          ${iconSvg}
           <span>${file.name}</span>
         </span>
         <span>&nbsp;</span>
@@ -431,8 +470,13 @@ export const InputSection: React.FC<InputSectionProps> = ({
       if (validFiles.length > 0) {
         onAddFiles(validFiles);
         validFiles.forEach(file => {
-          if (file.type === 'application/pdf') {
-            insertPdfPlaceholder(file);
+          // Insert placeholders for Docs, PDFs, Text files
+          // Skip for images (handled separately/inline) and Audio (handled via Preview only usually, but we can add chips too if desired. Let's stick to Preview for Audio as requested in previous turns)
+          const ext = file.name.split('.').pop()?.toLowerCase();
+          const isDoc = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'potx', 'txt'].includes(ext || '');
+          
+          if (isDoc || file.type === 'application/pdf') {
+            insertAttachmentPlaceholder(file);
           }
         });
       }
